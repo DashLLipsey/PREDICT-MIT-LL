@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
-import functions as f
+import functions_enc as f
 
 #%% 
 # This cell needs to be updated with your own paths/requirements
