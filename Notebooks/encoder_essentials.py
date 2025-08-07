@@ -6,16 +6,7 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 import functions_enc as f
 
-#%% 
-# This cell needs to be updated with your own paths/requirements
-batch_size = 128
-
-# change to your own data paths
-train_data = pd.read_feather('')
-val_data = pd.read_feather('')
-# this is the path to the file you created with chemical names and ChemNet embeddings
-name_smiles_embedding_df = f.format_embedding_df('')
-
+#%%
 batch_size = 64
 epochs=500
 lr=0.0001
