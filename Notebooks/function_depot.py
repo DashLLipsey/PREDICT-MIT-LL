@@ -274,7 +274,6 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
 #%%
 
 ### ==== FUNCTIONS ====
-
 # Spectrum string to dataframe function
 def spectrum_string_to_dataframe(df, spectrum_col, smiles_col):
     """
@@ -375,6 +374,129 @@ def add_epa_levels(df, response_col='Response', assign_func=assign_epa_level):
     #df.drop(columns=[response_col], inplace=True)
     return df
 
+# Threshold filter function
+def apply_threshold_filter(df, threshold):
+    """
+    Applies a threshold filter to spectral data, setting values below threshold to zero.
+    
+    Parameters:
+    df: DataFrame with first column as SMILES, last column as index_id, rest as spectral intensity columns
+    threshold: Float, minimum value to keep (values below this become 0)
+    
+    Returns:
+    DataFrame with filtered spectral data (values below threshold set to 0)
+    """
+    
+    # Create a copy to avoid modifying the original
+    filtered_df = df.copy()
+    
+    # Get spectral columns (all except first and last column)
+    spectral_cols = filtered_df.columns[1:-1]
+    
+    # Ensure spectral data is numeric
+    # filtered_df[spectral_cols] = filtered_df[spectral_cols].apply(pd.to_numeric, errors='coerce')
+    
+    # Apply threshold using numpy where - more explicit control
+    spectral_data = filtered_df[spectral_cols].values
+    spectral_data = np.where(spectral_data > threshold, spectral_data, 0)
+    filtered_df[spectral_cols] = spectral_data
+    
+    # index_id column is preserved unchanged
+    return filtered_df
+
+# Uniform binning function
+def bin_spectra_by_mz_range(df, bin_size):
+    """
+    Bins spectra data by grouping m/z columns into ranges of specified size.
+    
+    Parameters:
+    df: DataFrame with first column as SMILES, last column as index_id, rest as m/z columns (float names)
+    bin_size: Float, the size of each bin (e.g., 10 means bins of 0-10, 10-20, etc.)
+    
+    Returns:
+    DataFrame with SMILES column, binned m/z columns named by bin midpoints, and index_id column
+    """
+    smiles_col = df.columns[0]
+    index_col = df.columns[-1]  # Preserve the last column (index_id)
+    mz_cols = df.columns[1:-1]  # Exclude first and last columns
+    
+    # Create bins and assign each m/z to a bin
+    bin_assignments = {}
+    for mz in mz_cols:
+        bin_start = (mz // bin_size) * bin_size
+        bin_end = bin_start + bin_size
+        bin_midpoint = bin_start + (bin_size / 2)
+        
+        # Round to avoid floating point precision issues
+        bin_midpoint = round(bin_midpoint, 3)  
+        
+        if bin_midpoint not in bin_assignments:
+            bin_assignments[bin_midpoint] = []
+        bin_assignments[bin_midpoint].append(mz)
+    
+    # Create new DataFrame with binned data
+    result_df = pd.DataFrame()
+    result_df[smiles_col] = df[smiles_col]
+    
+    # Sum intensities for each bin
+    for bin_midpoint in sorted(bin_assignments.keys()):
+        cols_in_bin = bin_assignments[bin_midpoint]
+        result_df[bin_midpoint] = df[cols_in_bin].sum(axis=1)
+    
+    # Preserve index_id column
+    result_df[index_col] = df[index_col]
+    
+    return result_df
+
+# Bin filling function
+def fill_missing_bins(df, bin_size):
+    """
+    Fills in missing bin columns in a binned DataFrame.
+    
+    Parameters:
+    df: DataFrame with first column as SMILES, last column as index_id, rest as binned m/z columns (float names)
+    bin_size: Float, the original bin size used for binning
+    
+    Returns:
+    DataFrame with all missing bin midpoints filled in with zeros
+    """
+    smiles_col = df.columns[0]
+    index_col = df.columns[-1]  # Preserve the last column (index_id)
+    existing_bins = sorted([col for col in df.columns[1:-1] if isinstance(col, (int, float))])
+    
+    if not existing_bins:
+        return df
+    
+    # Calculate the step size 
+    step_size = bin_size
+    
+    # Find the range of bins to fill
+    min_bin = existing_bins[0]
+    max_bin = existing_bins[-1]
+    
+    # Generate all possible bin midpoints from first non-zero step to max_bin
+    all_bins = []
+    current_bin = step_size / 2  # Start from first non-zero bin (don't include 0)
+    while current_bin <= max_bin:
+        all_bins.append(current_bin)
+        current_bin += step_size
+    
+    # Find missing bins
+    missing_bins = set(all_bins) - set(existing_bins)
+    
+    # Add missing bins with zeros
+    result_df = df.copy()
+    for bin_midpoint in missing_bins:
+        result_df[bin_midpoint] = 0.0
+    
+    # Reorder columns: SMILES column first, then sorted bin columns, then index_id column
+    bin_cols = sorted([col for col in result_df.columns[1:-1] if isinstance(col, (int, float))])
+    ordered_cols = [smiles_col] + bin_cols + [index_col]
+    result_df = result_df[ordered_cols]
+    
+    return result_df
+
+
 
 
 ### ==== TENSORS CREATION FUNCTIONS ====
@@ -419,3 +541,40 @@ def create_dataset_tensors(spectra_dataset, embedding_df, device, start_idx=None
 
     return embeddings_tensor, spectra_tensor, spectra_indices_tensor
 
+def create_dataset_tensors_tox(spectra_dataset,device, start_idx=None, stop_idx=None):
+
+    spectra = spectra_dataset.iloc[:,1:-4]
+
+    # create tensors of spectra, true toxicity values, and chemical name encodings for train and val
+    #chem_labels = list(spectra_dataset['SMILES_spectra'])
+    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
+    spectra_tensor = torch.Tensor(spectra.values).to(device)
+    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
+
+    return log_tox_tensor, spectra_tensor, spectra_indices_tensor
+
+def create_dataset_tensors_tox_spec(spectra_dataset,device, start_idx=None, stop_idx=None):
+
+    embedding_cols = [col for col in spectra_dataset.columns if col.startswith('Embedding Float')]
+    spectra = spectra_dataset[embedding_cols]
+
+    # create tensors of spectra, true toxicity values, and chemical name encodings for train and val
+    #chem_labels = list(spectra_dataset['SMILES_spectra'])
+    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
+    spectra_tensor = torch.Tensor(spectra.values).to(device)
+    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
+
+    return log_tox_tensor, spectra_tensor, spectra_indices_tensor
+
+def create_dataset_tensors_emb_tox(spectra_dataset, embedding_df, device, start_idx=None, stop_idx=None):
+
+    spectra = spectra_dataset.iloc[:,1:-3]
+
+    # create tensors of spectra, true embeddings, true toxicity values, and chemical name encodings for train and val
+    chem_labels = list(spectra_dataset['SMILES_spectra'])
+    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
+    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    spectra_tensor = torch.Tensor(spectra.values).to(device)
+    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
+
+    return embeddings_tensor, log_tox_tensor, spectra_tensor, spectra_indices_tensor 

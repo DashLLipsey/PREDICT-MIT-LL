@@ -77,7 +77,7 @@ def add_response_and_log_response(spectra_df, original_df, smiles_col='SMILES_sp
     return spectra_df
 #$$
 batch_size = 128
-epochs=350
+epochs=500
 lr=0.0001
 criterion1=nn.MSELoss()
 criterion2=nn.MSELoss()
@@ -382,6 +382,10 @@ print(f"Mean Test Mean % Error: {df_cond_percent_error_results['Test_Mean_Percen
 
 #%%
 # CREATE HEATMAPS FOR CONDITIONAL ENCODER RESULTS - PERCENT ERRORS ONLY
+# Set min and max
+vmin = 0
+vmax = 100
+
 # Parse dataset names to extract bin sizes and thresholds
 def parse_cond_dataset_name(dataset_name):
     """Extract bin size and threshold from dataset name"""
@@ -425,8 +429,8 @@ cond_mean_error_pivot = cond_mean_error_pivot.reindex(columns=thresholds_subset,
 # Create separate heatmaps
 # Median Percent Error Heatmap
 fig, ax = plt.subplots(1, 1, figsize=(10, 8))
-sns.heatmap(cond_median_error_pivot, annot=True, fmt='.1f', cmap='RdYlBu_r', ax=ax,
-            cbar_kws={'label': 'Median % Error'})
+sns.heatmap(cond_median_error_pivot, annot=True, fmt='.1f', cmap='RdYlBu_r', ax=ax, vmin=vmin,
+                vmax=vmax, cbar_kws={'label': 'Median % Error'})
 ax.set_title('Conditional Encoder: Median Absolute Percent Error', fontsize=14, fontweight='bold')
 ax.set_xlabel('Threshold Value', fontsize=12)
 ax.set_ylabel('Bin Size', fontsize=12)
@@ -438,7 +442,7 @@ plt.show()
 
 # Mean Percent Error Heatmap
 fig, ax = plt.subplots(1, 1, figsize=(10, 8))
-sns.heatmap(cond_mean_error_pivot, annot=True, fmt='.1f', cmap='RdYlBu_r', ax=ax,
+sns.heatmap(cond_mean_error_pivot, annot=True, fmt='.1f', cmap='RdYlBu_r', ax=ax, vmin=vmin, vmax=vmax,
             cbar_kws={'label': 'Mean % Error'})
 ax.set_title('Conditional Encoder: Mean Absolute Percent Error', fontsize=14, fontweight='bold')
 ax.set_xlabel('Threshold Value', fontsize=12)
@@ -459,3 +463,4 @@ best_mean_error_idx = df_cond_percent_error_results['Test_Mean_Percent_Error'].i
 best_mean_error_dataset = df_cond_percent_error_results.loc[best_mean_error_idx, 'Dataset']
 best_mean_error_value = df_cond_percent_error_results.loc[best_mean_error_idx, 'Test_Mean_Percent_Error']
 print(f"Best Mean % Error: {best_mean_error_value:.2f}% from {best_mean_error_dataset}")
+# %%
