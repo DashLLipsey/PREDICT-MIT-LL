@@ -76,8 +76,8 @@ def add_response_and_log_response(spectra_df, original_df, smiles_col='SMILES_sp
     spectra_df['log_response'] = np.log(spectra_df['Response'])
     return spectra_df
 #$$
-batch_size = 64
-epochs=500
+batch_size = 128
+epochs=350
 lr=0.0001
 criterion1=nn.MSELoss()
 criterion2=nn.MSELoss()
