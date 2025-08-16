@@ -281,6 +281,39 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
 #%%
 
 ### ==== FUNCTIONS ====
+
+def set_up_gpu():
+    if torch.cuda.is_available():
+        # Get the list of GPUs
+        gpus = GPUtil.getGPUs()
+
+        # Find the GPU with the most free memory
+        best_gpu = max(gpus, key=lambda gpu: gpu.memoryFree)
+
+        # Print details about the selected GPU
+        print(f"Selected GPU ID: {best_gpu.id}")
+        print(f"  Name: {best_gpu.name}")
+        print(f"  Memory Free: {best_gpu.memoryFree} MB")
+        print(f"  Memory Used: {best_gpu.memoryUsed} MB")
+        print(f"  GPU Load: {best_gpu.load * 100:.2f}%")
+
+        # Set the device for later use
+        device = torch.device(f'cuda:{best_gpu.id}')
+        print('Current device ID: ', device)
+
+        # Set the current device in PyTorch
+        torch.cuda.set_device(best_gpu.id)
+    else:
+        device = torch.device('cpu')
+        print('Using CPU')
+        
+
+    # Confirm the currently selected device in PyTorch
+    print("PyTorch current device ID:", torch.cuda.current_device())
+    print("PyTorch current device name:", torch.cuda.get_device_name(torch.cuda.current_device()))
+
+    return device
+
 # Spectrum string to dataframe function
 def spectrum_string_to_dataframe(df, spectrum_col, smiles_col):
     """
