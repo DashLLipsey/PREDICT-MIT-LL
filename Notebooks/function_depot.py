@@ -14,6 +14,8 @@ import dask.dataframe as dd
 import os
 from fcd_torch import FCD
 
+import poetry
+
 ### ==== ENCODERS ====
 #%%
 # Encoder architecture (With Validation Set)
@@ -243,7 +245,11 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
             batch_predicted_log_tox = batch_predicted_combined[:, 512:] # Last column
             loss2 = criterion2(batch_predicted_log_tox, true_log_tox) # loss2 (toxicity loss)
             
-            total_loss = loss1 + loss2
+            print(loss1, loss2) # So we see what the losses are to pin on what lambda should be
+            total_loss = loss1 + ((1) * loss2 ) # lambda = 1 make the prediction accuracy much more important
+            
+
+
             total_loss.backward()
             optimizer.step()
             running_loss += total_loss.item()
