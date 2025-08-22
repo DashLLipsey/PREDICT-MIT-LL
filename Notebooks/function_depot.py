@@ -246,7 +246,7 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
             loss2 = criterion2(batch_predicted_log_tox, true_log_tox) # loss2 (toxicity loss)
             
             print(loss1, loss2) # So we see what the losses are to pin on what lambda should be
-            total_loss = loss1 + ((1) * loss2 ) # lambda = 1 make the prediction accuracy much more important
+            total_loss = loss1 + ((2) * loss2 ) # lambda = 2, bigger lambda will make the prediction accuracy much more important
             
 
 
@@ -320,42 +320,67 @@ def set_up_gpu():
 
     return device
 
-# Spectrum string to dataframe function
 def spectrum_string_to_dataframe(df, spectrum_col, smiles_col):
     """
     Converts a DataFrame with a spectrum column (string of 'x:y' pairs) into a matrix
     where columns are unique x values, rows are spectra (even for duplicate SMILES), and values are y (intensity).
-    The index will match the original DataFrame.
+    Creates and preserves an index_id column for tracking. All spectral columns will be float type with float values.
+    Spectral columns are sorted by their float values in ascending order.
     """
-    # Collect all unique x values (m/z)
+    # Create a copy of the input DataFrame and add index_id
+    df_copy = df.copy()
+    df_copy['index_id'] = range(len(df_copy))
+    
+    # Collect all unique x values (m/z) and convert to float
     x_values_set = set()
-    spectra_list = []
-    for idx, row in df.iterrows():
+    data_rows = []
+    
+    for idx, row in df_copy.iterrows():
         spectrum = row[spectrum_col]
         pairs = spectrum.split()
-        xys = []
+        xy_dict = {}
+        
         for pair in pairs:
             try:
                 x, y = pair.split(":") # Split into x and y
-                #x = float(x.replace("'", "").replace('"', '')) # Remove quotes and convert to float (done in processing)
-                #y = float(y.replace("'", "").replace('"', '')) # Remove quotes and convert to float (done in processing)
-                xys.append((x, y))
-                x_values_set.add(x)
+                x_float = float(x)
+                y_float = float(y)
+                xy_dict[x_float] = y_float
+                x_values_set.add(x_float)
             except Exception:
                 continue
-        spectra_list.append((row[smiles_col], dict(xys)))
-    x_values = sorted(x_values_set) # Sort the x values to maintain order
+        
+        # Store row data including index_id
+        data_rows.append({
+            'original_index': idx,
+            smiles_col: row[smiles_col],
+            'index_id': row['index_id'],
+            'xy_dict': xy_dict
+        })
     
-    # Build the matrix
-    matrix = []
-    smiles_list = []
-    for smiles, xy_dict in spectra_list:
-        row = [xy_dict.get(x, 0.0) for x in x_values]
-        matrix.append(row)
-        smiles_list.append(smiles)
-    df_matrix = pd.DataFrame(matrix, columns=[x for x in x_values]) # columns=[f"mz_{x}" for x in x_values]) to make stings
-    df_matrix.insert(0, smiles_col, smiles_list)
-    df_matrix.index = df.index  # preserve original row order/index
+    # Sort x values by their float values in ascending order
+    x_values = sorted(x_values_set)
+    
+    # Build the result DataFrame with columns in sorted order
+    result_data = {}
+    
+    # Add SMILES column first
+    result_data[smiles_col] = [row[smiles_col] for row in data_rows]
+    
+    # Add index_id column second
+    result_data['index_id'] = [row['index_id'] for row in data_rows]
+    
+    # Add spectral columns in sorted order
+    for x_val in x_values:
+        result_data[x_val] = [float(row['xy_dict'].get(x_val, 0.0)) for row in data_rows]
+    
+    # Create DataFrame - columns will be in the order we added them
+    df_matrix = pd.DataFrame(result_data)
+    
+    # Set the index to match original DataFrame
+    original_indices = [row['original_index'] for row in data_rows]
+    df_matrix.index = original_indices
+    
     return df_matrix
 
 # Cate's smiles to ChemNet embedding code
@@ -542,7 +567,111 @@ def fill_missing_bins(df, bin_size):
     
     return result_df
 
+def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory):
+    """
+    Creates all binned and thresholded datasets for a complete grid search.
+    
+    Parameters:
+    - df_spectra: DataFrame with spectral data (output from spectrum_string_to_dataframe)
+    - df_original: Original DataFrame with response data (e.g., df4_QQpos)
+    - bin_sizes: List of bin sizes to use
+    - thresholds: List of threshold values to use
+    - save_directory: Directory path to save the pickle files
+    
+    Returns:
+    - Dictionary with all created datasets keyed by variable names
+    """
+    import warnings
+    
+    created_datasets = {}
+    
+    # Create ALL binned and thresholded datasets (complete grid search)
+    print("Creating all binned and thresholded datasets...")
+    df_spectra_original = df_spectra.copy()
+    
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+            
+        for bin_size in bin_sizes:
+            for threshold in thresholds:
+                
+                # Create variable name
+                bin_str = str(bin_size).replace('.', '_')
+                thresh_str = str(threshold).replace('.', '_')
+                var_name = f"bin{bin_str}_thresh{thresh_str}_df_spectra"
+                    
+                # Start with original data
+                current_data = df_spectra_original.copy()
+            
+                # Apply threshold filtering first
+                threshold_filtered_data = apply_threshold_filter(current_data, threshold)
+                
+                # Then apply binning
+                binned_data = bin_spectra_by_mz_range(threshold_filtered_data, bin_size)
+            
+                # Fill missing bins
+                filled_data = fill_missing_bins(binned_data, bin_size)
+            
+                # Add response and log response values
+                final_data = add_response_and_log_response(filled_data, df_original)
+                
+                # Ensure index_id is preserved from original data
+                if 'index_id' in df_spectra.columns:
+                    final_data['index_id'] = df_spectra['index_id'].iloc[:len(final_data)].values
+                
+                # Store in created_datasets dictionary
+                created_datasets[var_name] = final_data
+                
+                # Save to file
+                save_path = f"{save_directory}/{var_name}.pkl"
+                final_data.to_pickle(save_path)
+                print(f"Saved {var_name} to {save_path} - Shape: {final_data.shape}")
 
+    print(f"  - {len(bin_sizes)} bin sizes: {bin_sizes}")
+    print(f"  - {len(thresholds)} threshold values: {thresholds}")
+    print(f"  - Plus the existing {len(bin_sizes)} thresh0 datasets")
+
+    # Create the missing threshold 0 datasets
+    print("Creating binned-only datasets (thresh0)...")
+    
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        
+        for bin_size in bin_sizes:
+            # Create variable name for thresh0 (no threshold)
+            bin_str = str(bin_size).replace('.', '_')
+            var_name = f"bin{bin_str}_thresh_zero_df_spectra"
+        
+            print(f"Creating {var_name}...")
+        
+            # Start with original data (no threshold filtering)
+            current_data = df_spectra_original.copy()
+        
+            # Binning only
+            binned_data = bin_spectra_by_mz_range(current_data, bin_size)
+        
+            # Fill missing bins
+            filled_data = fill_missing_bins(binned_data, bin_size)
+        
+            # Add response and log response values
+            final_data = add_response_and_log_response(filled_data, df_original)
+            
+            # Ensure index_id is preserved from original data
+            if 'index_id' in df_spectra.columns:
+                final_data['index_id'] = df_spectra['index_id'].iloc[:len(final_data)].values
+            
+            # Store in created_datasets dictionary
+            created_datasets[var_name] = final_data
+            
+            # Save to file
+            save_path = f"{save_directory}/{var_name}.pkl"
+            final_data.to_pickle(save_path)
+            print(f"Saved {var_name} to {save_path}")
+
+    print(f"Created {len(bin_sizes)} thresh0 datasets!")
+    print(f"Total datasets created: {len(created_datasets)}")
+    
+    return created_datasets
 
 
 ### ==== TENSORS CREATION FUNCTIONS ====
