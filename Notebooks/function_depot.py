@@ -367,12 +367,12 @@ def spectrum_string_to_dataframe(df, spectrum_col, smiles_col):
     # Add SMILES column first
     result_data[smiles_col] = [row[smiles_col] for row in data_rows]
     
-    # Add index_id column second
-    result_data['index_id'] = [row['index_id'] for row in data_rows]
-    
     # Add spectral columns in sorted order
     for x_val in x_values:
         result_data[x_val] = [float(row['xy_dict'].get(x_val, 0.0)) for row in data_rows]
+    
+    # Add index_id column last
+    result_data['index_id'] = [row['index_id'] for row in data_rows]
     
     # Create DataFrame - columns will be in the order we added them
     df_matrix = pd.DataFrame(result_data)
