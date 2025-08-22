@@ -87,3 +87,37 @@ urllib3==2.2.3
 wcwidth==0.2.13
 zipp==3.20.2
 pyarrow==17.0.0
+
+
+# [tool.poetry]
+# name = "python_files"
+# version = "0.1.0"
+# description = "A simple version of iterativenn to get people started"
+# authors = ["Dashiell Lipsey <dlipsey@wpi.edu>"]
+# license = "BSD 3-Clause License"
+# readme = "README.md"
+
+# [tool.poetry.dependencies]
+# python = "^3.10"
+# # For the computational code
+# torch = {version = "2.5.1", source = "pytorch"}
+# torchvision = {version = "0.20.*", source = "pytorch"}
+# numpy = "2.1.*"
+# # For data
+# pandas = "2.2.*"
+# pyarrow = "17.*.*"
+# # For the notebooks and vscode
+# matplotlib = "3.9.*"
+# plotly = "5.24.*"
+# ipykernel = "6.29.*"
+# ipympl = "0.9.*"
+# jupyterlab = "4.3.*"
+# jupytext = "1.17.*"
+# nbconvert = "7.16.*"
+# # wandb.ai
+# wandb = "0.19.*"
+# # Command line parsing
+# click = "8.1.*"
+# # Running jupyter notebooks in batch mode
+# papermill = "2.6.0"
+

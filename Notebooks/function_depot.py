@@ -19,12 +19,12 @@ import poetry
 ### ==== ENCODERS ====
 #%%
 # Encoder architecture (With Validation Set)
-batch_size = 64
-epochs=500
-lr=0.0001
-criterion=nn.MSELoss()
-output_size = 512
-num_layers = 8
+# batch_size = 64
+# epochs=500
+# lr=0.0001
+# criterion=nn.MSELoss()
+# output_size = 512
+# num_layers = 8
 
 class Encoder(nn.Module):
     def __init__(self, input_size, output_size, num_layers):
@@ -79,12 +79,12 @@ def train_model_encoder(model, train_data, val_data, epochs, learning_rate, crit
 
 #%%
 # Spectra Toxicity MLP
-batch_size = 128
-epochs=1000
-lr=0.0001
-criterion=nn.MSELoss()
-output_size = 1
-num_layers = 10
+# batch_size = 128
+# epochs=1000
+# lr=0.0001
+# criterion=nn.MSELoss()
+# output_size = 1
+# num_layers = 10
 
 # Everything below this line SHOULD be able to run without modification
 class SpecToxMLP_Reg(nn.Module):
@@ -140,12 +140,12 @@ def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, 
 
 #%%
 # ChemNet MLP
-batch_size = 128
-epochs=100
-lr=0.0001
-criterion=nn.MSELoss()
-output_size = 1
-num_layers = 5
+# batch_size = 128
+# epochs=100
+# lr=0.0001
+# criterion=nn.MSELoss()
+# output_size = 1
+# num_layers = 5
 
 # Everything below this line SHOULD be able to run without modification
 class ToxMLP(nn.Module):
@@ -201,13 +201,13 @@ def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterio
 
 #%%
 # Conditional encoder 
-batch_size = 64
-epochs=500
-lr=0.0001
-criterion1=nn.MSELoss()
-criterion2=nn.MSELoss()
-output_size = 513
-num_layers = 8
+# batch_size = 64
+# epochs=500
+# lr=0.0001
+# criterion1=nn.MSELoss()
+# criterion2=nn.MSELoss()
+# output_size = 513
+# num_layers = 8
 
 # Encoder architecture (With Validation Set)
 class Cond_Encoder(nn.Module):
