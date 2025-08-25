@@ -46,34 +46,35 @@ def train_model_encoder(model, train_data, val_data, epochs, learning_rate, crit
     for epoch in range(epochs):
         model.train()
         running_loss = 0.0
-        for batch, true_embeddings, _ in train_data:
+        for batch, true_embeddings, _ in train_data:  
             batch = batch.to(device)
             true_embeddings = true_embeddings.to(device)
 
             optimizer.zero_grad()
             batch_predicted_embeddings = model(batch)
-            loss = criterion(batch_predicted_embeddings, true_embeddings) # loss1 (embedding loss) and loss2 (toxicity loss)
+            loss = criterion(batch_predicted_embeddings, true_embeddings)
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
-        average_train_loss = running_loss / len(train_loader_enc)
+        average_train_loss = running_loss / len(train_data) 
 
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            for val_batch, val_true_embeddings, _ in val_data:
+            for val_batch, val_true_embeddings, _ in val_data:  
                 val_batch = val_batch.to(device)
                 val_true_embeddings = val_true_embeddings.to(device)
 
                 val_batch_predicted_embeddings = model(val_batch)
 
-                val_loss = criterion(val_batch_predicted_embeddings, val_true_embeddings)
-                val_loss += loss.item()
-        average_val_loss = val_loss / len(val_loader_enc)
+                val_batch_loss = criterion(val_batch_predicted_embeddings, val_true_embeddings)  
+                val_loss += val_batch_loss.item() 
+        average_val_loss = val_loss / len(val_data) 
 
-        print(f'Epoch [{epoch+1}/{epochs}]')
-        print(f'   Training loss: {average_train_loss}')
-        print(f'   Validation loss: {average_val_loss}')
+        if epoch % 50 == 0 or epoch == epochs - 1:  
+            print(f'Epoch [{epoch+1}/{epochs}]')
+            print(f'   Training loss: {average_train_loss:.6f}')
+            print(f'   Validation loss: {average_val_loss:.6f}')
 
     return model
 
@@ -409,6 +410,24 @@ def get_chemnet_emb_from_smiles(smiles_list):
 
     return smiles_emb_dict
 
+# Redefine the fuction so it makes a list rather than a dictionary, Done to get dataset
+def get_chemnet_emb_from_smiles_list(smiles_list):
+    """
+    Get ChemNet embeddings for a list of SMILES strings, preserving order and duplicates.
+    Returns a list of embeddings (or 'unknown') in the same order as input.
+    """
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    fcd = FCD(device, n_jobs=1)
+    embeddings = []
+    for smiles in smiles_list:
+        try:
+            emb = fcd.get_predictions([smiles])[0]
+            embeddings.append(list(emb))
+        except KeyError as e:
+            if e == 'PropertyTable':
+                embeddings.append('unknown')
+    return embeddings
+
 # Add the 'Response' and 'log_response' columns 
 # This is currently specifically for df3 column names
 def add_response_and_log_response(spectra_df, original_df, smiles_col='SMILES_spectra'):
@@ -674,7 +693,9 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory)
     return created_datasets
 
 
+
 ### ==== TENSORS CREATION FUNCTIONS ====
+
 # This is our default function, the one we use to prep the data for the encoder that takes us from spectra to ChemNet encodings 
 def create_dataset_tensors(spectra_dataset, embedding_df, device, start_idx=None, stop_idx=None):
     """
@@ -706,11 +727,11 @@ def create_dataset_tensors(spectra_dataset, embedding_df, device, start_idx=None
         - chem_encodings_tensor (torch.Tensor): Tensor of chemical name encodings.
         - spectra_indices_tensor (torch.Tensor): Tensor of indices corresponding to the spectra.
     """
-    spectra = spectra_dataset.iloc[:,1:-1]
+    spectra = spectra_dataset.iloc[:,start_idx:stop_idx]
 
     # create tensors of spectra, true embeddings, and chemical name encodings for train and val
     chem_labels = list(spectra_dataset['SMILES_spectra'])
-    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
     spectra_tensor = torch.Tensor(spectra.values).to(device)
     spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
 
@@ -718,7 +739,7 @@ def create_dataset_tensors(spectra_dataset, embedding_df, device, start_idx=None
 
 def create_dataset_tensors_tox(spectra_dataset,device, start_idx=None, stop_idx=None):
 
-    spectra = spectra_dataset.iloc[:,1:-4]
+    spectra = spectra_dataset.iloc[:,start_idx:stop_idx] # Prev was [1, -4]
 
     # create tensors of spectra, true toxicity values, and chemical name encodings for train and val
     #chem_labels = list(spectra_dataset['SMILES_spectra'])
@@ -743,7 +764,7 @@ def create_dataset_tensors_tox_spec(spectra_dataset,device, start_idx=None, stop
 
 def create_dataset_tensors_emb_tox(spectra_dataset, embedding_df, device, start_idx=None, stop_idx=None):
 
-    spectra = spectra_dataset.iloc[:,1:-3]
+    spectra = spectra_dataset.iloc[:,start_idx:stop_idx] # prev was [1,-3]
 
     # create tensors of spectra, true embeddings, true toxicity values, and chemical name encodings for train and val
     chem_labels = list(spectra_dataset['SMILES_spectra'])

@@ -42,11 +42,11 @@ def create_dataset_tensors_emb_tox(spectra_dataset, embedding_df, device, start_
     # Ensure log_response is float
     log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values.astype(float)).unsqueeze(1).to(device)
     
-    # More efficient embedding lookup - avoid list comprehension
+    # More efficient embedding lookup
     # Create a lookup dictionary for faster access
     embedding_dict = {}
     for _, row in embedding_df.iterrows():
-        smiles = row['SMILES']
+        smiles = row['SMILES_spectra']
         embedding_dict[smiles] = row.iloc[1:].values.astype(float)
     
     # Build embeddings array efficiently
@@ -147,7 +147,7 @@ lr = 0.0001
 criterion1=nn.MSELoss() # Still use MSELoss for the embedding criterion
 
 # This allows us to easily change the toxicity prediction criterion of 4 options
-# Options: 'mse', 'median_ape', 'mean_ape', 'log_mse'
+# Options: 'mse', 'median_ape', 'mean_ape'
 tox_criterion_type = 'mse'  # Start with this safer option
 
 if tox_criterion_type == 'mse':
@@ -156,10 +156,8 @@ elif tox_criterion_type == 'median_ape':
     criterion2 = MedianAbsolutePercentError()
 elif tox_criterion_type == 'mean_ape':
     criterion2 = MeanAbsolutePercentError()
-elif tox_criterion_type == 'log_mse':
-    criterion2 = LogSpaceMSE()
 else:
-    raise ValueError("tox_criterion_type must be 'mse', 'median_ape', 'mean_ape', or 'log_mse'")
+    raise ValueError("tox_criterion_type must be 'mse', 'median_ape', or 'mean_ape'")
 
 #%%
 # Encoder architecture (With Validation Set)
@@ -204,9 +202,9 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
             batch_predicted_log_tox = batch_predicted_combined[:, 512:]
             loss2 = criterion2(batch_predicted_log_tox, true_log_tox)
 
-            print(loss1, loss2) # So we see what the losses are to pin on what lambda should be
-            total_loss = loss1 + loss2 # lambda = 1 make the prediction accuracy much more important
-            
+            # print(loss1, loss2) # So we see what the losses are to pin on what lambda should be
+            total_loss = loss1 + (3 * loss2) # lambda = 3 make the prediction accuracy much more important
+
             # Check for NaN loss and skip if found
             if torch.isnan(total_loss):
                 print(f"NaN loss detected in epoch {epoch+1}, batch {batch_count}, skipping...")
@@ -273,16 +271,16 @@ print(f"Using toxicity criterion: {tox_criterion_type}")
 
 # Set up device and load ChemNet reference
 device = f.set_up_gpu()
-name_smiles_embedding_df = pd.read_csv("/home/dlipsey/MITLincolnLabs/MIT_LL_data/ChemNet_of_df3_QQpos_no_repeats.csv")
+name_smiles_embedding_df = pd.read_csv("/home/dlipsey/MITLincolnLabs/MIT_LL_data/ChemNet_of_df4_QQpos.csv")
 
 # Load the original dataset for response mapping
-df3_QQpos = pd.read_csv("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df3_QQpos.csv")
+df4_QQpos = pd.read_csv("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df4_QQpos.csv")
 
 # Define folders
 grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes"
 
 # Get all dataset files from the grid search folder
-dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.pkl') and 'df3_QQpos_spectra' in f]
+dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.pkl') and 'df_spectra' in f]
 
 # Define allowed bin sizes (exclude 0.01)
 allowed_bin_prefixes = ['bin0_05_', 'bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_', 
@@ -350,15 +348,15 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         train_data_copy = train_data.copy()
         test_data_copy = test_data.copy()
         
-        train_data_processed = add_response_and_log_response(train_data_copy, df3_QQpos, smiles_col='SMILES_spectra')
-        test_data_processed = add_response_and_log_response(test_data_copy, df3_QQpos, smiles_col='SMILES_spectra')
+        train_data_processed = add_response_and_log_response(train_data_copy, df4_QQpos, smiles_col='SMILES_spectra')
+        test_data_processed = add_response_and_log_response(test_data_copy, df4_QQpos, smiles_col='SMILES_spectra')
         
         # Create tensors
         y_train_emb, y_train_tox, x_train, train_indices_tensor = create_dataset_tensors_emb_tox(
-            train_data_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-3)
-        
+            train_data_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
+
         y_val_emb, y_val_tox, x_val, val_indices_tensor = create_dataset_tensors_emb_tox(
-            test_data_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-3)
+            test_data_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
         
         # Create data loaders
         train_dataset = TensorDataset(x_train, y_train_emb, y_train_tox, train_indices_tensor)
@@ -416,7 +414,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         
         # Create tensors for full dataset
         y_full_emb, y_full_tox, x_full, full_indices_tensor = create_dataset_tensors_emb_tox(
-            full_data_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-3)
+            full_data_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
         
         # Generate conditional encoder outputs
         cond_encoder_current.eval()
@@ -455,14 +453,14 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             parts = dataset_name.split('_thresh')
             bin_part = parts[0]  # Keep bin0_1 format
             
-            thresh_part = parts[1].split('_df3_QQpos_spectra')[0]
+            thresh_part = parts[1].split('_df_spectra')[0]
             threshold_part = f"thresh{thresh_part}"  # Keep thresh0_001 format
         
         # Save conditional encoder outputs (513 dimensions + 4 metadata = 517 columns total)
         output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_outputs"
         os.makedirs(output_folder, exist_ok=True)
-        
-        predictions_filename = f"cond_enc_{bin_part}_{threshold_part}_df3_QQpos_spectra.pkl"
+
+        predictions_filename = f"cond_enc_{bin_part}_{threshold_part}_df_spectra.pkl"
         predictions_path = os.path.join(output_folder, predictions_filename)
         output_df.to_pickle(predictions_path)
 
