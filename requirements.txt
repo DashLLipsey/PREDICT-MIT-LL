@@ -92,7 +92,7 @@ pyarrow==17.0.0
 # [tool.poetry]
 # name = "python_files"
 # version = "0.1.0"
-# description = "A simple version of iterativenn to get people started"
+# description = "Chemical detection"
 # authors = ["Dashiell Lipsey <dlipsey@wpi.edu>"]
 # license = "BSD 3-Clause License"
 # readme = "README.md"

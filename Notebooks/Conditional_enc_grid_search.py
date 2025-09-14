@@ -138,12 +138,12 @@ class LogSpaceMSE(nn.Module):
         return self.mse(pred, true)
 
 
-# Conditional Encoder Architecutre: Set the parameters and the loss function from the classes defined above.
+# Conditional Encoder Architecture: Set the parameters and the loss function from the classes defined above.
 output_size = 513
-num_layers = 8
-batch_size = 128
-epochs=500
-lr = 0.0001
+num_layers = 4
+batch_size = 512
+epochs=1000
+lr = 0.0003
 criterion1=nn.MSELoss() # Still use MSELoss for the embedding criterion
 
 # This allows us to easily change the toxicity prediction criterion of 4 options
@@ -179,7 +179,7 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     
     # Add gradient clipping to prevent explosion
-    max_grad_norm = 1.0
+    # max_grad_norm = 1.0
 
     for epoch in range(epochs):
         model.train()
@@ -203,7 +203,7 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
             loss2 = criterion2(batch_predicted_log_tox, true_log_tox)
 
             # print(loss1, loss2) # So we see what the losses are to pin on what lambda should be
-            total_loss = loss1 + (3 * loss2) # lambda = 3 make the prediction accuracy much more important
+            total_loss = loss1 + (5 * loss2) # lambda = 5 make the prediction accuracy much more important
 
             # Check for NaN loss and skip if found
             if torch.isnan(total_loss):
@@ -213,7 +213,7 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
             total_loss.backward()
             
             # Clip gradients to prevent explosion
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             
             optimizer.step()
             running_loss += total_loss.item()
