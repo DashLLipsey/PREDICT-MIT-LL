@@ -91,7 +91,7 @@ def train_model_chemnet_encoder(model, train_data, val_data, epochs, learning_ra
 # batch_size = __
 # epochs = __
 # lr = 0.0001
-# criterion = nn.BCEWithLogitsLoss()
+criterion = nn.BCEWithLogitsLoss()
 # output_size = 2048
 # num_layers = __
 
@@ -131,7 +131,7 @@ def train_model_morgan_fp_encoder(model, train_data, val_data, epochs, learning_
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
-        average_train_loss = running_loss / len(train_loader) 
+        average_train_loss = running_loss / len(train_data) 
 
         model.eval()
         val_loss = 0.0
@@ -144,7 +144,7 @@ def train_model_morgan_fp_encoder(model, train_data, val_data, epochs, learning_
 
                 val_batch_loss = criterion(val_batch_predicted_embeddings, val_true_embeddings)  
                 val_loss += val_batch_loss.item() 
-        average_val_loss = val_loss / len(val_loader) 
+        average_val_loss = val_loss / len(val_data) 
         
         # Store losses for this epoch
         train_losses.append(average_train_loss)
@@ -200,7 +200,7 @@ def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, 
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
-        average_train_loss = running_loss / len(train_loader)
+        average_train_loss = running_loss / len(train_data)
 
         model.eval()
         val_loss = 0.0
@@ -213,7 +213,7 @@ def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, 
 
                 val_batch_loss = criterion(val_batch_predicted_tox, val_true_tox)
                 val_loss += val_batch_loss.item()
-        average_val_loss = val_loss / len(val_loader)
+        average_val_loss = val_loss / len(val_data)
         
         # Store losses for this epoch
         train_losses.append(average_train_loss)
@@ -268,7 +268,7 @@ def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterio
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
-        average_train_loss = running_loss / len(train_loader)
+        average_train_loss = running_loss / len(train_data)
 
         model.eval()
         val_loss = 0.0
@@ -281,7 +281,7 @@ def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterio
 
                 val_batch_loss = criterion(val_batch_predicted_tox, val_true_tox)
                 val_loss += val_batch_loss.item()
-        average_val_loss = val_loss / len(val_loader)
+        average_val_loss = val_loss / len(val_data)
         
         # Store losses for this epoch
         train_losses.append(average_train_loss)
@@ -351,7 +351,7 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
             total_loss.backward()
             optimizer.step()
             running_loss += total_loss.item()
-        average_train_loss = running_loss / len(train_loader)
+        average_train_loss = running_loss / len(train_data)
 
         model.eval()
         val_loss = 0.0
@@ -374,7 +374,7 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
 
                 val_loss = criterion2(val_batch_predicted_tox, val_true_tox)
                 val_loss += loss2.item()
-        average_val_loss = val_loss / len(val_loader)
+        average_val_loss = val_loss / len(val_data)
         
         # Store losses for this epoch
         train_losses.append(average_train_loss)
@@ -453,7 +453,7 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
             total_loss.backward()
             optimizer.step()
             running_loss += total_loss.item()
-        average_train_loss = running_loss / len(train_loader)
+        average_train_loss = running_loss / len(train_data)
 
         model.eval()
         val_loss = 0.0
@@ -476,7 +476,7 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
 
                 val_loss = criterion2(val_batch_predicted_tox, val_true_tox)
                 val_loss += loss2.item()
-        average_val_loss = val_loss / len(val_loader)
+        average_val_loss = val_loss / len(val_data)
         
         # Store losses for this epoch
         train_losses.append(average_train_loss)
