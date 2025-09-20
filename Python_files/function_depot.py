@@ -293,7 +293,6 @@ def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterio
 
     return model, train_losses, val_losses
 
-#%%
 # Conditional encoder (ChemNet + Toxicity) 
 # batch_size = __
 # epochs = __
@@ -320,16 +319,24 @@ class Cond_Encoder_chemnet_tox(nn.Module):
     def forward(self, x):
         return self.encoder(x)
 
-def train_model_condenc(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, lambda1, lambda2, device):
+def train_model_condenc_chemnet_tox(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, lambda1, lambda2, device):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     
     # Initialize lists to store losses
     train_losses = []
     val_losses = []
+    # New: Store individual loss components (after lambda weighting)
+    train_embedding_losses = []
+    train_toxicity_losses = []
+    val_embedding_losses = []
+    val_toxicity_losses = []
 
     for epoch in range(epochs):
         model.train()
         running_loss = 0.0
+        running_embedding_loss = 0.0
+        running_toxicity_loss = 0.0
+        
         for batch, true_embeddings, true_log_tox, _ in train_data:
             batch = batch.to(device)
             true_embeddings = true_embeddings.to(device)
@@ -345,16 +352,30 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
             batch_predicted_log_tox = batch_predicted_combined[:, 512:]
             loss2 = criterion2(batch_predicted_log_tox, true_log_tox)
             
+            # Apply lambda weighting
+            weighted_loss1 = lambda1 * loss1
+            weighted_loss2 = lambda2 * loss2
+            
             # Loss function with modular weights (lambda1 and lambda2)
-            total_loss = ((lambda1) * loss1) + ((lambda2) * loss2) 
+            total_loss = weighted_loss1 + weighted_loss2
 
             total_loss.backward()
             optimizer.step()
+            
+            # Accumulate losses
             running_loss += total_loss.item()
+            running_embedding_loss += weighted_loss1.item()
+            running_toxicity_loss += weighted_loss2.item()
+            
         average_train_loss = running_loss / len(train_data)
+        average_train_embedding_loss = running_embedding_loss / len(train_data)
+        average_train_toxicity_loss = running_toxicity_loss / len(train_data)
 
         model.eval()
         val_loss = 0.0
+        val_embedding_loss = 0.0
+        val_toxicity_loss = 0.0
+        
         with torch.no_grad():
             for val_batch, val_true_embeddings, val_true_tox, _ in val_data:
                 val_batch = val_batch.to(device)
@@ -363,28 +384,42 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
 
                 val_batch_predicted = model(val_batch)
                 val_batch_predicted_embeddings = val_batch_predicted[:, :512]
-
-                val_loss = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
-                val_loss += loss1.item()
-
-                val_batch = val_batch.to(device)
-                val_true_embeddings = val_true_tox.to(device)
-
                 val_batch_predicted_tox = val_batch_predicted[:, 512:]
 
-                val_loss = criterion2(val_batch_predicted_tox, val_true_tox)
-                val_loss += loss2.item()
+                # Calculate individual losses
+                val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
+                val_loss2 = criterion2(val_batch_predicted_tox, val_true_tox)
+                
+                # Apply lambda weighting
+                val_weighted_loss1 = lambda1 * val_loss1
+                val_weighted_loss2 = lambda2 * val_loss2
+                
+                # Accumulate losses
+                val_loss += (val_weighted_loss1 + val_weighted_loss2).item()
+                val_embedding_loss += val_weighted_loss1.item()
+                val_toxicity_loss += val_weighted_loss2.item()
+                
         average_val_loss = val_loss / len(val_data)
+        average_val_embedding_loss = val_embedding_loss / len(val_data)
+        average_val_toxicity_loss = val_toxicity_loss / len(val_data)
         
         # Store losses for this epoch
         train_losses.append(average_train_loss)
         val_losses.append(average_val_loss)
+        train_embedding_losses.append(average_train_embedding_loss)
+        train_toxicity_losses.append(average_train_toxicity_loss)
+        val_embedding_losses.append(average_val_embedding_loss)
+        val_toxicity_losses.append(average_val_toxicity_loss)
 
         print(f'Epoch [{epoch+1}/{epochs}]')
-        print(f'   Training loss: {average_train_loss}')
-        print(f'   Validation loss: {average_val_loss}')
+        print(f'   Training loss: {average_train_loss:.6f}')
+        print(f'   Training embedding loss (λ={lambda1}): {average_train_embedding_loss:.6f}')
+        print(f'   Training toxicity loss (λ={lambda2}): {average_train_toxicity_loss:.6f}')
+        print(f'   Validation loss: {average_val_loss:.6f}')
+        print(f'   Validation embedding loss (λ={lambda1}): {average_val_embedding_loss:.6f}')
+        print(f'   Validation toxicity loss (λ={lambda2}): {average_val_toxicity_loss:.6f}')
 
-    return model, train_losses, val_losses
+    return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, val_embedding_losses, val_toxicity_losses
 
 
 #%%
@@ -416,16 +451,27 @@ class Cond_Encoder_chemnet_tox_morgan(nn.Module):
     def forward(self, x):
         return self.encoder(x)
 
-def train_model_condenc(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, lambda1, lambda2, device):
+def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, lambda1, lambda2, lambda3, device):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     
     # Initialize lists to store losses
     train_losses = []
     val_losses = []
+    # Store individual loss components (after lambda weighting)
+    train_embedding_losses = []
+    train_toxicity_losses = []
+    train_morgan_losses = []
+    val_embedding_losses = []
+    val_toxicity_losses = []
+    val_morgan_losses = []
 
     for epoch in range(epochs):
         model.train()
         running_loss = 0.0
+        running_embedding_loss = 0.0
+        running_toxicity_loss = 0.0
+        running_morgan_loss = 0.0
+        
         for batch, true_embeddings, true_log_tox, true_morgan, _ in train_data:
             batch = batch.to(device)
             true_embeddings = true_embeddings.to(device)
@@ -433,7 +479,7 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
             true_morgan = true_morgan.to(device)
 
             optimizer.zero_grad()
-            batch_predicted_combined = model(batch) # Take the first 512 for criterion 1 and the last for criterion 2, look up to make sure i only apply the loss to the subset of the model
+            batch_predicted_combined = model(batch)
             
             # Embedding Loss
             batch_predicted_embeddings = batch_predicted_combined[:, :512] # First 512 columns
@@ -441,52 +487,92 @@ def train_model_condenc(model, train_data, val_data, epochs, learning_rate, crit
             # Response Loss
             batch_predicted_log_tox = batch_predicted_combined[:, 512:513] # 512th column
             loss2 = criterion2(batch_predicted_log_tox, true_log_tox) # loss2 (toxicity loss)
-            
             # Morgan Loss
             batch_predicted_morgan = batch_predicted_combined[:, 513:] # Last 2048 columns
             loss3 = criterion3(batch_predicted_morgan, true_morgan) # loss3 (morgan loss)
 
-            # Loss function with modular weights (lambda1 and lambda2)
-            # print(loss1, loss2) # So we see what the losses are to pin on what lambda should be
-            total_loss = ((lambda1) * loss1) + ((lambda2) * loss2) + ((lambda3) * loss3)
+            # Apply lambda weighting
+            weighted_loss1 = lambda1 * loss1
+            weighted_loss2 = lambda2 * loss2
+            weighted_loss3 = lambda3 * loss3
+            
+            # Total loss with modular weights
+            total_loss = weighted_loss1 + weighted_loss2 + weighted_loss3
 
             total_loss.backward()
             optimizer.step()
+            
+            # Accumulate losses
             running_loss += total_loss.item()
+            running_embedding_loss += weighted_loss1.item()
+            running_toxicity_loss += weighted_loss2.item()
+            running_morgan_loss += weighted_loss3.item()
+            
         average_train_loss = running_loss / len(train_data)
+        average_train_embedding_loss = running_embedding_loss / len(train_data)
+        average_train_toxicity_loss = running_toxicity_loss / len(train_data)
+        average_train_morgan_loss = running_morgan_loss / len(train_data)
 
         model.eval()
         val_loss = 0.0
-        with torch.no_grad():  # Condense this as we did above for symmetry tho not needed without loss.backward command
-            for val_batch, val_true_embeddings, val_true_tox, _ in val_data:
+        val_embedding_loss = 0.0
+        val_toxicity_loss = 0.0
+        val_morgan_loss = 0.0
+        
+        with torch.no_grad():
+            for val_batch, val_true_embeddings, val_true_tox, val_true_morgan, _ in val_data:
                 val_batch = val_batch.to(device)
                 val_true_embeddings = val_true_embeddings.to(device)
                 val_true_tox = val_true_tox.to(device)
+                val_true_morgan = val_true_morgan.to(device)
 
                 val_batch_predicted = model(val_batch)
                 val_batch_predicted_embeddings = val_batch_predicted[:, :512]
+                val_batch_predicted_tox = val_batch_predicted[:, 512:513]
+                val_batch_predicted_morgan = val_batch_predicted[:, 513:]
 
-                val_loss = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
-                val_loss += loss1.item()
-
-                val_batch = val_batch.to(device)
-                val_true_embeddings = val_true_tox.to(device)
-
-                val_batch_predicted_tox = val_batch_predicted[:, 512:]
-
-                val_loss = criterion2(val_batch_predicted_tox, val_true_tox)
-                val_loss += loss2.item()
+                # Calculate individual losses
+                val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
+                val_loss2 = criterion2(val_batch_predicted_tox, val_true_tox)
+                val_loss3 = criterion3(val_batch_predicted_morgan, val_true_morgan)
+                
+                # Apply lambda weighting
+                val_weighted_loss1 = lambda1 * val_loss1
+                val_weighted_loss2 = lambda2 * val_loss2
+                val_weighted_loss3 = lambda3 * val_loss3
+                
+                # Accumulate losses
+                val_loss += (val_weighted_loss1 + val_weighted_loss2 + val_weighted_loss3).item()
+                val_embedding_loss += val_weighted_loss1.item()
+                val_toxicity_loss += val_weighted_loss2.item()
+                val_morgan_loss += val_weighted_loss3.item()
+                
         average_val_loss = val_loss / len(val_data)
+        average_val_embedding_loss = val_embedding_loss / len(val_data)
+        average_val_toxicity_loss = val_toxicity_loss / len(val_data)
+        average_val_morgan_loss = val_morgan_loss / len(val_data)
         
         # Store losses for this epoch
         train_losses.append(average_train_loss)
         val_losses.append(average_val_loss)
+        train_embedding_losses.append(average_train_embedding_loss)
+        train_toxicity_losses.append(average_train_toxicity_loss)
+        train_morgan_losses.append(average_train_morgan_loss)
+        val_embedding_losses.append(average_val_embedding_loss)
+        val_toxicity_losses.append(average_val_toxicity_loss)
+        val_morgan_losses.append(average_val_morgan_loss)
 
         print(f'Epoch [{epoch+1}/{epochs}]')
-        print(f'   Training loss: {average_train_loss}')
-        print(f'   Validation loss: {average_val_loss}')
+        print(f'   Training loss: {average_train_loss:.6f}')
+        print(f'   Training embedding loss (λ={lambda1}): {average_train_embedding_loss:.6f}')
+        print(f'   Training toxicity loss (λ={lambda2}): {average_train_toxicity_loss:.6f}')
+        print(f'   Training morgan loss (λ={lambda3}): {average_train_morgan_loss:.6f}')
+        print(f'   Validation loss: {average_val_loss:.6f}')
+        print(f'   Validation embedding loss (λ={lambda1}): {average_val_embedding_loss:.6f}')
+        print(f'   Validation toxicity loss (λ={lambda2}): {average_val_toxicity_loss:.6f}')
+        print(f'   Validation morgan loss (λ={lambda3}): {average_val_morgan_loss:.6f}')
 
-    return model, train_losses, val_losses
+    return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses
 
 #%%
 
