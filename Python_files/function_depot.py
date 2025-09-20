@@ -286,10 +286,10 @@ def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterio
         # Store losses for this epoch
         train_losses.append(average_train_loss)
         val_losses.append(average_val_loss)
-
-        print(f'Epoch [{epoch+1}/{epochs}]')
-        print(f'   Training loss: {average_train_loss:.6f}')
-        print(f'   Validation loss: {average_val_loss:.6f}')
+        if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
+            print(f'Epoch [{epoch+1}/{epochs}]')
+            print(f'   Training loss: {average_train_loss:.6f}')
+            print(f'   Validation loss: {average_val_loss:.6f}')
 
     return model, train_losses, val_losses
 
@@ -411,13 +411,14 @@ def train_model_condenc_chemnet_tox(model, train_data, val_data, epochs, learnin
         val_embedding_losses.append(average_val_embedding_loss)
         val_toxicity_losses.append(average_val_toxicity_loss)
 
-        print(f'Epoch [{epoch+1}/{epochs}]')
-        print(f'   Training loss: {average_train_loss:.6f}')
-        print(f'   Training embedding loss (λ={lambda1}): {average_train_embedding_loss:.6f}')
-        print(f'   Training toxicity loss (λ={lambda2}): {average_train_toxicity_loss:.6f}')
-        print(f'   Validation loss: {average_val_loss:.6f}')
-        print(f'   Validation embedding loss (λ={lambda1}): {average_val_embedding_loss:.6f}')
-        print(f'   Validation toxicity loss (λ={lambda2}): {average_val_toxicity_loss:.6f}')
+        if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
+            print(f'Epoch [{epoch+1}/{epochs}]')
+            print(f'   Training loss: {average_train_loss:.6f}')
+            print(f'   Training embedding loss: {average_train_embedding_loss:.6f}')
+            print(f'   Training toxicity loss: {average_train_toxicity_loss:.6f}')
+            print(f'   Validation loss: {average_val_loss:.6f}')
+            print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
+            print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
 
     return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, val_embedding_losses, val_toxicity_losses
 
@@ -564,13 +565,13 @@ def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, 
 
         print(f'Epoch [{epoch+1}/{epochs}]')
         print(f'   Training loss: {average_train_loss:.6f}')
-        print(f'   Training embedding loss (λ={lambda1}): {average_train_embedding_loss:.6f}')
-        print(f'   Training toxicity loss (λ={lambda2}): {average_train_toxicity_loss:.6f}')
-        print(f'   Training morgan loss (λ={lambda3}): {average_train_morgan_loss:.6f}')
+        print(f'   Training embedding loss: {average_train_embedding_loss:.6f}')
+        print(f'   Training toxicity loss: {average_train_toxicity_loss:.6f}')
+        print(f'   Training morgan loss: {average_train_morgan_loss:.6f}')
         print(f'   Validation loss: {average_val_loss:.6f}')
-        print(f'   Validation embedding loss (λ={lambda1}): {average_val_embedding_loss:.6f}')
-        print(f'   Validation toxicity loss (λ={lambda2}): {average_val_toxicity_loss:.6f}')
-        print(f'   Validation morgan loss (λ={lambda3}): {average_val_morgan_loss:.6f}')
+        print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
+        print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
+        print(f'   Validation morgan loss: {average_val_morgan_loss:.6f}')
 
     return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses
 
