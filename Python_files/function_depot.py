@@ -91,12 +91,14 @@ def train_model_chemnet_encoder(model, train_data, val_data, epochs, learning_ra
 # batch_size = __
 # epochs = __
 # lr = 0.0001
-criterion = nn.BCEWithLogitsLoss()
+criterion = nn.MSELoss()
 # output_size = 2048
 # num_layers = __
 
 # IMPORTANT NOTE: Morgan fingerprints are typically binary vectors (0s and 1s). So the normal 
 # method of using MSELoss may not be the best choice. Consider using BCEWithLogitsLoss or BCELoss
+
+# # New structure with sigmoid in the final layer, and just BCELoss
 class Morgan_fp_Encoder(nn.Module):
     def __init__(self, input_size, output_size, num_layers):
         super().__init__()
@@ -109,7 +111,9 @@ class Morgan_fp_Encoder(nn.Module):
         self.encoder = nn.Sequential(*layers)
 
     def forward(self, x):
-        return self.encoder(x)
+        output = self.encoder(x)  
+        # probs = torch.sigmoid(output)  
+        return output
 
 def train_model_morgan_fp_encoder(model, train_data, val_data, epochs, learning_rate, criterion, device):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -430,7 +434,7 @@ def train_model_condenc_chemnet_tox(model, train_data, val_data, epochs, learnin
 # lr = 0.0001
 # criterion1 = nn.MSELoss()
 # criterion2 = nn.MSELoss()
-criterion3 = nn.BCEWithLogitsLoss()
+criterion3 = nn.MSELoss()
 # output_size = 513
 # num_layers = __
 lambda1 = 1
