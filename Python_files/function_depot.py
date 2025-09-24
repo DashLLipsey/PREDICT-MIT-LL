@@ -723,7 +723,7 @@ def get_chemnet_emb_from_smiles_list(smiles_list):
     return embeddings
 
 # Add the 'Response' and 'log_response' columns 
-# This is currently specifically for df3 column names
+# This is currently specifically for column names
 def add_response_and_log_response(spectra_df, original_df, smiles_col='SMILES_spectra'):
     """
     Adds 'Response' and 'log_response' columns to spectra_df by mapping from original_df using the SMILES column.
