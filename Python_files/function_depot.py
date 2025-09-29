@@ -13,7 +13,7 @@ from collections import Counter, OrderedDict
 import dask.dataframe as dd
 import os
 from fcd_torch import FCD
-
+import seaborn as sns
 import poetry
 ### ======================================================= WANDB CONFIGS ====================================================== ###
 chemnet_config = {
@@ -1357,21 +1357,7 @@ def plot_multiple_training_curves(loss_data_dict, figsize=(12, 8), save_path=Non
 # output_size = 512
 # num_layers = __
 
-class ChemNet_Encoder(nn.Module):
-    def __init__(self, input_size, output_size, num_layers):
-        super().__init__()
-        layers = []
-        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-        for i in range(num_layers):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-            if i < num_layers - 1:
-                layers.append(nn.LeakyReLU(inplace=True))
-        self.encoder = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.encoder(x)
-
-def train_model_chemnet_encoder(model, train_data, val_data, epochs, learning_rate, criterion, device):
+def train_model_chemnet_encoder_nowandb(model, train_data, val_data, epochs, learning_rate, criterion, device):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
  
     # Initialize lists to store losses
@@ -1428,24 +1414,7 @@ criterion = nn.MSELoss()
 # IMPORTANT NOTE: Morgan fingerprints are typically binary vectors (0s and 1s). So the normal 
 # method of using MSELoss may not be the best choice. Consider using BCEWithLogitsLoss or BCELoss
 
-# # New structure with sigmoid in the final layer, and just BCELoss
-class Morgan_fp_Encoder(nn.Module):
-    def __init__(self, input_size, output_size, num_layers):
-        super().__init__()
-        layers = []
-        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-        for i in range(num_layers):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-            if i < num_layers - 1:
-                layers.append(nn.LeakyReLU(inplace=True))
-        self.encoder = nn.Sequential(*layers)
-
-    def forward(self, x):
-        output = self.encoder(x)  
-        # probs = torch.sigmoid(output)  
-        return output
-
-def train_model_morgan_fp_encoder(model, train_data, val_data, epochs, learning_rate, criterion, device):
+def train_model_morgan_fp_encoder_nowandb(model, train_data, val_data, epochs, learning_rate, criterion, device):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     # Initialize lists to store losses
@@ -1498,21 +1467,7 @@ def train_model_morgan_fp_encoder(model, train_data, val_data, epochs, learning_
 # output_size = 1
 # num_layers = __
 
-class SpecToxMLP_Reg(nn.Module):
-    def __init__(self, input_size, output_size, num_layers):
-        super().__init__()
-        layers = []
-        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-        for i in range(num_layers):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-            if i < num_layers - 1:
-                layers.append(nn.LeakyReLU(inplace=True))
-        self.encoder = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.encoder(x)
-
-def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, criterion, device):
+def train_model_MLP_spectra_nowandb(model, train_data, val_data, epochs, learning_rate, criterion, device):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     # Initialize lists to store losses
@@ -1565,21 +1520,7 @@ def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, 
 # output_size = 1
 # num_layers = __
 
-class ToxMLP(nn.Module):
-    def __init__(self, input_size, output_size, num_layers):
-        super().__init__()
-        layers = []
-        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-        for i in range(num_layers):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-            if i < num_layers - 1:
-                layers.append(nn.LeakyReLU(inplace=True))
-        self.encoder = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.encoder(x)
-
-def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterion, device):
+def train_model_MLP_nowandb(model, train_data, val_data, epochs, learning_rate, criterion, device):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     # Initialize lists to store losses
@@ -1634,23 +1575,8 @@ def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterio
 lambda1 = 1
 lambda2 = 5
 
-# Smaller conditional encoder architecture
-class Cond_Encoder_chemnet_tox(nn.Module):
-    def __init__(self, input_size, output_size, num_layers):
-        super().__init__()
-        layers = []
-        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-        for i in range(num_layers):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-            if i < num_layers - 1:
-                layers.append(nn.LeakyReLU(inplace=True))
-        self.encoder = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.encoder(x)
-
-def train_model_condenc_chemnet_tox(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, 
-                                    lambda1, lambda2, device):
+def train_model_condenc_chemnet_tox_nowandb(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, 
+                                            lambda1, lambda2, device):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     # Initialize lists to store losses
@@ -1767,23 +1693,8 @@ lambda1 = 1
 lambda2 = 5
 lambda3 = 1
 
-# Conditional Encoder architecture
-class Cond_Encoder_chemnet_tox_morgan(nn.Module):
-    def __init__(self, input_size, output_size, num_layers):
-        super().__init__()
-        layers = []
-        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-        for i in range(num_layers):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-            if i < num_layers - 1:
-                layers.append(nn.LeakyReLU(inplace=True))
-        self.encoder = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.encoder(x)
-
-def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, 
-                                           lambda1, lambda2, lambda3, device):
+def train_model_condenc_chemnet_tox_morgan_nowandb(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, 
+                                                   criterion3, lambda1, lambda2, lambda3, device):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     # Initialize lists to store losses
@@ -1904,3 +1815,169 @@ def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, 
         print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
         print(f'   Validation morgan loss: {average_val_morgan_loss:.6f}')
     return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses
+
+
+### ========================================================= HEATMAPS ========================================================= ###
+
+# Also create individual larger heatmaps for Morgan fingerprints for better detail
+def create_detailed_heatmap_morgan(pivot_data, metric_name, cmap, figsize=(12, 8), vmin=None, vmax=None):
+    """Create a detailed heatmap for a single Morgan fingerprint metric"""
+    plt.figure(figsize=figsize)
+    
+    # Create heatmap
+    sns.heatmap(pivot_data, 
+                annot=True, 
+                fmt='.3f' if 'R²' in metric_name else '.1f', 
+                cmap=cmap,
+                square=False,
+                linewidths=0.5,
+                vmin=vmin,
+                vmax=vmax,
+                cbar_kws={'label': f'Test {metric_name}', 'shrink': 0.8})
+    
+    plt.title(f'Morgan Fingerprint: {metric_name} by Bin Size and Threshold', fontsize=16, fontweight='bold')
+    plt.xlabel('Threshold Value', fontsize=14)
+    plt.ylabel('Bin Size', fontsize=14)
+    plt.gca().invert_yaxis()
+    
+    # Improve readability
+    plt.xticks(rotation=45)
+    plt.yticks(rotation=0)
+    
+    # Add text annotation for best performance
+    if 'R²' in metric_name:
+        best_val = pivot_data.max().max()
+        plt.text(0.02, 0.98, f'Best R²: {best_val:.4f}', 
+                transform=plt.gca().transAxes, 
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+                verticalalignment='top')
+    else:
+        best_val = pivot_data.min().min()
+        plt.text(0.02, 0.98, f'Best {metric_name}: {best_val:.1f}%', 
+                transform=plt.gca().transAxes, 
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+                verticalalignment='top')
+    
+    plt.tight_layout()
+    plt.savefig(f"/home/dlipsey/MITLincolnLabs/Figures/Morgan_Fingerprint_{metric_name}_by_Bin_Size_and_Threshold")
+    plt.show()
+
+# Also create individual larger heatmaps for better detail
+def create_detailed_heatmap_spec(pivot_data, metric_name, cmap, figsize=(12, 8), vmin=None, vmax=None):
+    """Create a detailed heatmap for a single metric"""
+    plt.figure(figsize=figsize)
+    
+    # Create heatmap
+    sns.heatmap(pivot_data, 
+                annot=True, 
+                fmt='.3f' if 'R²' in metric_name else '.1f', 
+                cmap=cmap,
+                square=False,
+                linewidths=0.5,
+                vmin=vmin,
+                vmax=vmax,
+                cbar_kws={'label': f'Test {metric_name}', 'shrink': 0.8})
+    
+    plt.title(f'Spectra: {metric_name} by Bin Size and Threshold', fontsize=16, fontweight='bold')
+    plt.xlabel('Threshold Value', fontsize=14)
+    plt.ylabel('Bin Size', fontsize=14)
+    plt.gca().invert_yaxis()
+    
+    # Improve readability
+    plt.xticks(rotation=45)
+    plt.yticks(rotation=0)
+    
+    # Add text annotation for best performance
+    if 'R²' in metric_name:
+        best_val = pivot_data.max().max()
+        plt.text(0.02, 0.98, f'Best R²: {best_val:.4f}', 
+                transform=plt.gca().transAxes, 
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+                verticalalignment='top')
+    else:
+        best_val = pivot_data.min().min()
+        plt.text(0.02, 0.98, f'Best {metric_name}: {best_val:.1f}%', 
+                transform=plt.gca().transAxes, 
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+                verticalalignment='top')
+    
+    plt.tight_layout()
+    plt.savefig(f"/home/dlipsey/MITLincolnLabs/Figures/Spectra_{metric_name}_by_Bin_Size_and_Threshold")
+    plt.show()
+
+def create_detailed_heatmap_chemnet(pivot_data, metric_name, cmap, figsize=(12, 8), vmin=None, vmax=None):
+    """Create a detailed heatmap for a single ChemNet metric"""
+    plt.figure(figsize=figsize)
+    
+    # Create heatmap
+    sns.heatmap(pivot_data, 
+                annot=True, 
+                fmt='.3f' if 'R²' in metric_name else '.1f', 
+                cmap=cmap,
+                square=False,
+                linewidths=0.5,
+                vmin=vmin,
+                vmax=vmax,
+                cbar_kws={'label': f'Test {metric_name}', 'shrink': 0.8})
+    
+    plt.title(f'ChemNet: {metric_name} by Bin Size and Threshold', fontsize=16, fontweight='bold')
+    plt.xlabel('Threshold Value', fontsize=14)
+    plt.ylabel('Bin Size', fontsize=14)
+    plt.gca().invert_yaxis()
+    
+    # Improve readability
+    plt.xticks(rotation=45)
+    plt.yticks(rotation=0)
+    
+    # Add text annotation for best performance
+    if 'R²' in metric_name:
+        best_val = pivot_data.max().max()
+        plt.text(0.02, 0.98, f'Best R²: {best_val:.4f}', 
+                transform=plt.gca().transAxes, 
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+                verticalalignment='top')
+    else:
+        best_val = pivot_data.min().min()
+        plt.text(0.02, 0.98, f'Best {metric_name}: {best_val:.1f}%', 
+                transform=plt.gca().transAxes, 
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+                verticalalignment='top')
+    
+    plt.tight_layout()
+    plt.savefig(f"/home/dlipsey/MITLincolnLabs/Figures/ChemNet_{metric_name}_by_Bin_Size_and_Threshold")
+    plt.show()
+
+def create_detailed_heatmap_cond_enc(pivot_data, metric_name, cmap, figsize=(12, 8), vmin=None, vmax=None):
+    """Create a detailed heatmap for a single conditional encoder metric"""
+    plt.figure(figsize=figsize)
+    
+    # Create heatmap
+    sns.heatmap(pivot_data, 
+                annot=True, 
+                fmt='.1f', 
+                cmap=cmap,
+                square=False,
+                linewidths=0.5,
+                vmin=vmin,
+                vmax=vmax,
+                cbar_kws={'label': f'Test {metric_name}', 'shrink': 0.8})
+    
+    plt.title(f'Conditional Encoder: {metric_name} by Bin Size and Threshold', fontsize=16, fontweight='bold')
+    plt.xlabel('Threshold Value', fontsize=14)
+    plt.ylabel('Bin Size', fontsize=14)
+    plt.gca().invert_yaxis()
+    
+    # Improve readability
+    plt.xticks(rotation=45)
+    plt.yticks(rotation=0)
+    
+    # Add text annotation for best performance
+    best_val = pivot_data.min().min()
+    plt.text(0.02, 0.98, f'Best {metric_name}: {best_val:.1f}%', 
+            transform=plt.gca().transAxes, 
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+            verticalalignment='top')
+    
+    plt.tight_layout()
+    plt.savefig(f"/home/dlipsey/MITLincolnLabs/Figures/Conditional_encoder_{metric_name}_by_Bin_Size_and_Threshold")
+    plt.show()
