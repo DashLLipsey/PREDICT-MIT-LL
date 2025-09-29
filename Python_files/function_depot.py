@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 
-#import wandb
+import wandb
 import itertools
 import GPUtil
 from collections import Counter, OrderedDict
@@ -15,8 +15,53 @@ import os
 from fcd_torch import FCD
 
 import poetry
+### ======================================================= WANDB CONFIGS ====================================================== ###
+chemnet_config = {
+        'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
+        'wandb_project': 'MIT-Lincoln-Lab',
+        'gpu':True,
+        'embedding_type' : "ChemNet",
+        'encoder_type' : "ChemNet Encoder"
+    }
+morganfp_config = {
+        'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
+        'wandb_project': 'MIT-Lincoln-Lab',
+        'gpu':True,
+        'embedding_type' : "Morgan Fingerprints",
+        'encoder_type' : "Encoder"
+    }
+spectra_config = {
+        'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
+        'wandb_project': 'MIT-Lincoln-Lab',
+        'gpu':True,
+        'embedding_type' : "Spectra",
+        'encoder_type' : "MLP"
+    }
 
-### ==== ENCODERS ====
+chemnet_mlp_config = {
+        'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
+        'wandb_project': 'MIT-Lincoln-Lab',
+        'gpu':True,
+        'embedding_type' : "ChemNet",
+        'encoder_type' : "MLP"
+    }
+
+chemnet_tox_config = {
+        'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
+        'wandb_project': 'MIT-Lincoln-Lab',
+        'gpu':True,
+        'embedding_type' : "ChemNet + Toxicity",
+        'encoder_type' : "Conditional Encoder"
+    }
+chemnet_tox_morgan_config = {
+        'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
+        'wandb_project': 'MIT-Lincoln-Lab',
+        'gpu':True,
+        'embedding_type' : "ChemNet + Toxicity + Morgan Fingerprints",
+        'encoder_type' : "Conditional Encoder"
+    }
+
+### ======================================================= ENCODERS ======================================================= ###
 #%%
 # ChemNet Encoder
 # batch_size = __
@@ -41,8 +86,10 @@ class ChemNet_Encoder(nn.Module):
         return self.encoder(x)
 
 def train_model_chemnet_encoder(model, train_data, val_data, epochs, learning_rate, criterion, device):
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, config = chemnet_config)
+    wandb.init(entity=config['wandb_entity'],
+               project=config['wandb_project'],
+               config=config)    
     # Initialize lists to store losses
     train_losses = []
     val_losses = []
@@ -61,6 +108,7 @@ def train_model_chemnet_encoder(model, train_data, val_data, epochs, learning_ra
             optimizer.step()
             running_loss += loss.item()
         average_train_loss = running_loss / len(train_loader) 
+        wandb.log({"average_train_loss": average_train_loss})
 
         model.eval()
         val_loss = 0.0
@@ -74,7 +122,8 @@ def train_model_chemnet_encoder(model, train_data, val_data, epochs, learning_ra
                 val_batch_loss = criterion(val_batch_predicted_embeddings, val_true_embeddings)  
                 val_loss += val_batch_loss.item() 
         average_val_loss = val_loss / len(val_loader) 
-        
+        wandb.log({"average_val_loss": average_val_loss})
+
         # Store losses for this epoch
         train_losses.append(average_train_loss)
         val_losses.append(average_val_loss)
@@ -83,7 +132,7 @@ def train_model_chemnet_encoder(model, train_data, val_data, epochs, learning_ra
             print(f'Epoch [{epoch+1}/{epochs}]')
             print(f'   Training loss: {average_train_loss:.6f}')
             print(f'   Validation loss: {average_val_loss:.6f}')
-
+    wandb.finish()
     return model, train_losses, val_losses
 
 #%%
@@ -115,9 +164,11 @@ class Morgan_fp_Encoder(nn.Module):
         # probs = torch.sigmoid(output)  
         return output
 
-def train_model_morgan_fp_encoder(model, train_data, val_data, epochs, learning_rate, criterion, device):
+def train_model_morgan_fp_encoder(model, train_data, val_data, epochs, learning_rate, criterion, device, config = morganfp_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    
+    wandb.init(entity=config['wandb_entity'],
+               project=config['wandb_project'],
+               config=config) 
     # Initialize lists to store losses
     train_losses = []
     val_losses = []
@@ -136,6 +187,7 @@ def train_model_morgan_fp_encoder(model, train_data, val_data, epochs, learning_
             optimizer.step()
             running_loss += loss.item()
         average_train_loss = running_loss / len(train_data) 
+        wandb.log({"average_train_loss": average_train_loss})
 
         model.eval()
         val_loss = 0.0
@@ -149,7 +201,8 @@ def train_model_morgan_fp_encoder(model, train_data, val_data, epochs, learning_
                 val_batch_loss = criterion(val_batch_predicted_embeddings, val_true_embeddings)  
                 val_loss += val_batch_loss.item() 
         average_val_loss = val_loss / len(val_data) 
-        
+        wandb.log({"average_val_loss": average_val_loss})
+
         # Store losses for this epoch
         train_losses.append(average_train_loss)
         val_losses.append(average_val_loss)
@@ -158,7 +211,7 @@ def train_model_morgan_fp_encoder(model, train_data, val_data, epochs, learning_
             print(f'Epoch [{epoch+1}/{epochs}]')
             print(f'   Training loss: {average_train_loss:.6f}')
             print(f'   Validation loss: {average_val_loss:.6f}')
-
+    wandb.finish()
     return model, train_losses, val_losses
 
 #%%
@@ -184,9 +237,11 @@ class SpecToxMLP_Reg(nn.Module):
     def forward(self, x):
         return self.encoder(x)
 
-def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, criterion, device):
+def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, criterion, device, config = spectra_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    
+    wandb.init(entity=config['wandb_entity'],
+               project=config['wandb_project'],
+               config=config) 
     # Initialize lists to store losses
     train_losses = []
     val_losses = []
@@ -205,6 +260,7 @@ def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, 
             optimizer.step()
             running_loss += loss.item()
         average_train_loss = running_loss / len(train_data)
+        wandb.log({"average_train_loss": average_train_loss})
 
         model.eval()
         val_loss = 0.0
@@ -218,7 +274,8 @@ def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, 
                 val_batch_loss = criterion(val_batch_predicted_tox, val_true_tox)
                 val_loss += val_batch_loss.item()
         average_val_loss = val_loss / len(val_data)
-        
+        wandb.log({"average_val_loss": average_val_loss})
+
         # Store losses for this epoch
         train_losses.append(average_train_loss)
         val_losses.append(average_val_loss)
@@ -226,7 +283,7 @@ def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, 
         print(f'Epoch [{epoch+1}/{epochs}]')
         print(f'   Training loss: {average_train_loss:.6f}')
         print(f'   Validation loss: {average_val_loss:.6f}')
-
+    wandb.finish()
     return model, train_losses, val_losses
 
 #%%
@@ -252,9 +309,11 @@ class ToxMLP(nn.Module):
     def forward(self, x):
         return self.encoder(x)
 
-def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterion, device):
+def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterion, device, config = chemnet_mlp_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    
+    wandb.init(entity=config['wandb_entity'],
+               project=config['wandb_project'],
+               config=config) 
     # Initialize lists to store losses
     train_losses = []
     val_losses = []
@@ -273,6 +332,7 @@ def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterio
             optimizer.step()
             running_loss += loss.item()
         average_train_loss = running_loss / len(train_data)
+        wandb.log({"average_train_loss": average_train_loss})
 
         model.eval()
         val_loss = 0.0
@@ -286,7 +346,8 @@ def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterio
                 val_batch_loss = criterion(val_batch_predicted_tox, val_true_tox)
                 val_loss += val_batch_loss.item()
         average_val_loss = val_loss / len(val_data)
-        
+        wandb.log({"average_val_loss": average_val_loss})
+
         # Store losses for this epoch
         train_losses.append(average_train_loss)
         val_losses.append(average_val_loss)
@@ -294,7 +355,7 @@ def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterio
             print(f'Epoch [{epoch+1}/{epochs}]')
             print(f'   Training loss: {average_train_loss:.6f}')
             print(f'   Validation loss: {average_val_loss:.6f}')
-
+    wandb.finish()
     return model, train_losses, val_losses
 
 # Conditional encoder (ChemNet + Toxicity) 
@@ -323,9 +384,12 @@ class Cond_Encoder_chemnet_tox(nn.Module):
     def forward(self, x):
         return self.encoder(x)
 
-def train_model_condenc_chemnet_tox(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, lambda1, lambda2, device):
+def train_model_condenc_chemnet_tox(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, 
+                                    lambda1, lambda2, device, config = chemnet_tox_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    
+    wandb.init(entity=config['wandb_entity'],
+               project=config['wandb_project'],
+               config=config) 
     # Initialize lists to store losses
     train_losses = []
     val_losses = []
@@ -374,7 +438,10 @@ def train_model_condenc_chemnet_tox(model, train_data, val_data, epochs, learnin
         average_train_loss = running_loss / len(train_data)
         average_train_embedding_loss = running_embedding_loss / len(train_data)
         average_train_toxicity_loss = running_toxicity_loss / len(train_data)
-
+        wandb.log({"average_train_loss": average_train_loss})
+        wandb.log({"average_train_embedding_loss": average_train_embedding_loss})
+        wandb.log({"average_train_toxicity_loss": average_train_toxicity_loss})
+        
         model.eval()
         val_loss = 0.0
         val_embedding_loss = 0.0
@@ -406,7 +473,10 @@ def train_model_condenc_chemnet_tox(model, train_data, val_data, epochs, learnin
         average_val_loss = val_loss / len(val_data)
         average_val_embedding_loss = val_embedding_loss / len(val_data)
         average_val_toxicity_loss = val_toxicity_loss / len(val_data)
-        
+        wandb.log({"average_val_loss": average_val_loss})
+        wandb.log({"average_val_embedding_loss": average_val_embedding_loss})
+        wandb.log({"average_val_toxicity_loss": average_val_toxicity_loss})
+
         # Store losses for this epoch
         train_losses.append(average_train_loss)
         val_losses.append(average_val_loss)
@@ -423,7 +493,7 @@ def train_model_condenc_chemnet_tox(model, train_data, val_data, epochs, learnin
             print(f'   Validation loss: {average_val_loss:.6f}')
             print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
             print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
-
+    wandb.finish()
     return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, val_embedding_losses, val_toxicity_losses
 
 
@@ -456,9 +526,12 @@ class Cond_Encoder_chemnet_tox_morgan(nn.Module):
     def forward(self, x):
         return self.encoder(x)
 
-def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, lambda1, lambda2, lambda3, device):
+def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, 
+                                           lambda1, lambda2, lambda3, device, config = chemnet_tox_morgan_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    
+    wandb.init(entity=config['wandb_entity'],
+               project=config['wandb_project'],
+               config=config) 
     # Initialize lists to store losses
     train_losses = []
     val_losses = []
@@ -517,6 +590,10 @@ def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, 
         average_train_embedding_loss = running_embedding_loss / len(train_data)
         average_train_toxicity_loss = running_toxicity_loss / len(train_data)
         average_train_morgan_loss = running_morgan_loss / len(train_data)
+        wandb.log({"average_train_loss": average_train_loss})
+        wandb.log({"average_train_embedding_loss": average_train_embedding_loss})
+        wandb.log({"average_train_toxicity_loss": average_train_toxicity_loss})
+        wandb.log({"average_train_morgan_loss": average_train_morgan_loss})
 
         model.eval()
         val_loss = 0.0
@@ -556,7 +633,11 @@ def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, 
         average_val_embedding_loss = val_embedding_loss / len(val_data)
         average_val_toxicity_loss = val_toxicity_loss / len(val_data)
         average_val_morgan_loss = val_morgan_loss / len(val_data)
-        
+        wandb.log({"average_val_loss": average_val_loss})
+        wandb.log({"average_val_embedding_loss": average_val_embedding_loss})
+        wandb.log({"average_val_toxicity_loss": average_val_toxicity_loss})
+        wandb.log({"average_val_morgan_loss": average_val_morgan_loss})
+
         # Store losses for this epoch
         train_losses.append(average_train_loss)
         val_losses.append(average_val_loss)
@@ -576,12 +657,12 @@ def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, 
         print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
         print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
         print(f'   Validation morgan loss: {average_val_morgan_loss:.6f}')
-
+    wandb.finish()
     return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses
 
 #%%
 
-### =============== FUNCTIONS ===============
+### ======================================================= FUNCTIONS ======================================================= ###
 
 def set_up_gpu():
     if torch.cuda.is_available():
@@ -1037,7 +1118,7 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory)
 
 
 
-### =============== TENSORS CREATION FUNCTIONS ===============
+### =============================================== TENSORS CREATION FUNCTIONS =============================================== ###
 
 # This is our default function, the one we use to prep the data for the encoder that takes us from spectra to ChemNet encodings 
 def create_dataset_tensors(spectra_dataset, embedding_df, device, start_idx=None, stop_idx=None):
@@ -1265,3 +1346,561 @@ def plot_multiple_training_curves(loss_data_dict, figsize=(12, 8), save_path=Non
         plt.show()
     
     return fig, ax
+
+### ===================================================== ENCODERS W/O WANDB ==================================================== ###
+
+# ChemNet Encoder
+# batch_size = __
+# epochs= __
+# lr= 0.0001
+# criterion = nn.MSELoss()
+# output_size = 512
+# num_layers = __
+
+class ChemNet_Encoder(nn.Module):
+    def __init__(self, input_size, output_size, num_layers):
+        super().__init__()
+        layers = []
+        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
+        for i in range(num_layers):
+            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i < num_layers - 1:
+                layers.append(nn.LeakyReLU(inplace=True))
+        self.encoder = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.encoder(x)
+
+def train_model_chemnet_encoder(model, train_data, val_data, epochs, learning_rate, criterion, device):
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+ 
+    # Initialize lists to store losses
+    train_losses = []
+    val_losses = []
+
+    for epoch in range(epochs):
+        model.train()
+        running_loss = 0.0
+        for batch, true_embeddings, _ in train_data:  
+            batch = batch.to(device)
+            true_embeddings = true_embeddings.to(device)
+
+            optimizer.zero_grad()
+            batch_predicted_embeddings = model(batch)
+            loss = criterion(batch_predicted_embeddings, true_embeddings)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+        average_train_loss = running_loss / len(train_loader) 
+
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for val_batch, val_true_embeddings, _ in val_data:  
+                val_batch = val_batch.to(device)
+                val_true_embeddings = val_true_embeddings.to(device)
+
+                val_batch_predicted_embeddings = model(val_batch)
+
+                val_batch_loss = criterion(val_batch_predicted_embeddings, val_true_embeddings)  
+                val_loss += val_batch_loss.item() 
+        average_val_loss = val_loss / len(val_loader) 
+
+        # Store losses for this epoch
+        train_losses.append(average_train_loss)
+        val_losses.append(average_val_loss)
+
+        if epoch % 50 == 0 or epoch == epochs - 1:  
+            print(f'Epoch [{epoch+1}/{epochs}]')
+            print(f'   Training loss: {average_train_loss:.6f}')
+            print(f'   Validation loss: {average_val_loss:.6f}')
+    return model, train_losses, val_losses
+
+#%%
+# Morgan Fingerprint Encoder
+# batch_size = __
+# epochs = __
+# lr = 0.0001
+criterion = nn.MSELoss()
+# output_size = 2048
+# num_layers = __
+
+# IMPORTANT NOTE: Morgan fingerprints are typically binary vectors (0s and 1s). So the normal 
+# method of using MSELoss may not be the best choice. Consider using BCEWithLogitsLoss or BCELoss
+
+# # New structure with sigmoid in the final layer, and just BCELoss
+class Morgan_fp_Encoder(nn.Module):
+    def __init__(self, input_size, output_size, num_layers):
+        super().__init__()
+        layers = []
+        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
+        for i in range(num_layers):
+            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i < num_layers - 1:
+                layers.append(nn.LeakyReLU(inplace=True))
+        self.encoder = nn.Sequential(*layers)
+
+    def forward(self, x):
+        output = self.encoder(x)  
+        # probs = torch.sigmoid(output)  
+        return output
+
+def train_model_morgan_fp_encoder(model, train_data, val_data, epochs, learning_rate, criterion, device):
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+    # Initialize lists to store losses
+    train_losses = []
+    val_losses = []
+
+    for epoch in range(epochs):
+        model.train()
+        running_loss = 0.0
+        for batch, true_embeddings, _ in train_data:  
+            batch = batch.to(device)
+            true_embeddings = true_embeddings.to(device)
+
+            optimizer.zero_grad()
+            batch_predicted_embeddings = model(batch)
+            loss = criterion(batch_predicted_embeddings, true_embeddings)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+        average_train_loss = running_loss / len(train_data) 
+
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for val_batch, val_true_embeddings, _ in val_data:  
+                val_batch = val_batch.to(device)
+                val_true_embeddings = val_true_embeddings.to(device)
+
+                val_batch_predicted_embeddings = model(val_batch)
+
+                val_batch_loss = criterion(val_batch_predicted_embeddings, val_true_embeddings)  
+                val_loss += val_batch_loss.item() 
+        average_val_loss = val_loss / len(val_data) 
+        # Store losses for this epoch
+        train_losses.append(average_train_loss)
+        val_losses.append(average_val_loss)
+
+        if epoch % 50 == 0 or epoch == epochs - 1:  
+            print(f'Epoch [{epoch+1}/{epochs}]')
+            print(f'   Training loss: {average_train_loss:.6f}')
+            print(f'   Validation loss: {average_val_loss:.6f}')
+    return model, train_losses, val_losses
+
+#%%
+# Spectra Toxicity MLP
+# batch_size = __
+# epochs = __
+# lr = 0.0001
+# criterion = nn.MSELoss()
+# output_size = 1
+# num_layers = __
+
+class SpecToxMLP_Reg(nn.Module):
+    def __init__(self, input_size, output_size, num_layers):
+        super().__init__()
+        layers = []
+        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
+        for i in range(num_layers):
+            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i < num_layers - 1:
+                layers.append(nn.LeakyReLU(inplace=True))
+        self.encoder = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.encoder(x)
+
+def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, criterion, device):
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+    # Initialize lists to store losses
+    train_losses = []
+    val_losses = []
+
+    for epoch in range(epochs):
+        model.train()
+        running_loss = 0.0
+        for batch, true_log_tox, _ in train_data:
+            batch = batch.to(device)
+            true_log_tox = true_log_tox.to(device)
+
+            optimizer.zero_grad()
+            batch_predicted_log_tox = model(batch)
+            loss = criterion(batch_predicted_log_tox, true_log_tox)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+        average_train_loss = running_loss / len(train_data)
+
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for val_batch, val_true_tox, _ in val_data:
+                val_batch = val_batch.to(device)
+                val_true_tox = val_true_tox.to(device)
+
+                val_batch_predicted_tox = model(val_batch)
+
+                val_batch_loss = criterion(val_batch_predicted_tox, val_true_tox)
+                val_loss += val_batch_loss.item()
+        average_val_loss = val_loss / len(val_data)
+
+        # Store losses for this epoch
+        train_losses.append(average_train_loss)
+        val_losses.append(average_val_loss)
+
+        print(f'Epoch [{epoch+1}/{epochs}]')
+        print(f'   Training loss: {average_train_loss:.6f}')
+        print(f'   Validation loss: {average_val_loss:.6f}')
+    return model, train_losses, val_losses
+
+#%%
+# ChemNet MLP
+# batch_size = __
+# epochs = __
+# lr = 0.0001
+# criterion = nn.MSELoss()
+# output_size = 1
+# num_layers = __
+
+class ToxMLP(nn.Module):
+    def __init__(self, input_size, output_size, num_layers):
+        super().__init__()
+        layers = []
+        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
+        for i in range(num_layers):
+            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i < num_layers - 1:
+                layers.append(nn.LeakyReLU(inplace=True))
+        self.encoder = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.encoder(x)
+
+def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterion, device):
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+    # Initialize lists to store losses
+    train_losses = []
+    val_losses = []
+
+    for epoch in range(epochs):
+        model.train()
+        running_loss = 0.0
+        for batch, true_log_tox, _ in train_data:
+            batch = batch.to(device)
+            true_log_tox = true_log_tox.to(device)
+
+            optimizer.zero_grad()
+            batch_predicted_log_tox = model(batch)
+            loss = criterion(batch_predicted_log_tox, true_log_tox)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+        average_train_loss = running_loss / len(train_data)
+
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for val_batch, val_true_tox, _ in val_data:
+                val_batch = val_batch.to(device)
+                val_true_tox = val_true_tox.to(device)
+
+                val_batch_predicted_tox = model(val_batch)
+
+                val_batch_loss = criterion(val_batch_predicted_tox, val_true_tox)
+                val_loss += val_batch_loss.item()
+        average_val_loss = val_loss / len(val_data)
+
+        # Store losses for this epoch
+        train_losses.append(average_train_loss)
+        val_losses.append(average_val_loss)
+        if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
+            print(f'Epoch [{epoch+1}/{epochs}]')
+            print(f'   Training loss: {average_train_loss:.6f}')
+            print(f'   Validation loss: {average_val_loss:.6f}')
+    return model, train_losses, val_losses
+
+# Conditional encoder (ChemNet + Toxicity) 
+# batch_size = __
+# epochs = __
+# lr = 0.0001
+# criterion1 = nn.MSELoss()
+# criterion2 = nn.MSELoss()
+# output_size = 513
+# num_layers = __
+lambda1 = 1
+lambda2 = 5
+
+# Smaller conditional encoder architecture
+class Cond_Encoder_chemnet_tox(nn.Module):
+    def __init__(self, input_size, output_size, num_layers):
+        super().__init__()
+        layers = []
+        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
+        for i in range(num_layers):
+            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i < num_layers - 1:
+                layers.append(nn.LeakyReLU(inplace=True))
+        self.encoder = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.encoder(x)
+
+def train_model_condenc_chemnet_tox(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, 
+                                    lambda1, lambda2, device):
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+    # Initialize lists to store losses
+    train_losses = []
+    val_losses = []
+    # New: Store individual loss components (after lambda weighting)
+    train_embedding_losses = []
+    train_toxicity_losses = []
+    val_embedding_losses = []
+    val_toxicity_losses = []
+
+    for epoch in range(epochs):
+        model.train()
+        running_loss = 0.0
+        running_embedding_loss = 0.0
+        running_toxicity_loss = 0.0
+        
+        for batch, true_embeddings, true_log_tox, _ in train_data:
+            batch = batch.to(device)
+            true_embeddings = true_embeddings.to(device)
+            true_log_tox = true_log_tox.to(device)
+
+            optimizer.zero_grad()
+            batch_predicted_combined = model(batch)
+            
+            # Embedding Loss
+            batch_predicted_embeddings = batch_predicted_combined[:, :512]
+            loss1 = criterion1(batch_predicted_embeddings, true_embeddings)
+            # Response Loss
+            batch_predicted_log_tox = batch_predicted_combined[:, 512:]
+            loss2 = criterion2(batch_predicted_log_tox, true_log_tox)
+            
+            # Apply lambda weighting
+            weighted_loss1 = lambda1 * loss1
+            weighted_loss2 = lambda2 * loss2
+            
+            # Loss function with modular weights (lambda1 and lambda2)
+            total_loss = weighted_loss1 + weighted_loss2
+
+            total_loss.backward()
+            optimizer.step()
+            
+            # Accumulate losses
+            running_loss += total_loss.item()
+            running_embedding_loss += weighted_loss1.item()
+            running_toxicity_loss += weighted_loss2.item()
+            
+        average_train_loss = running_loss / len(train_data)
+        average_train_embedding_loss = running_embedding_loss / len(train_data)
+        average_train_toxicity_loss = running_toxicity_loss / len(train_data)
+        
+        model.eval()
+        val_loss = 0.0
+        val_embedding_loss = 0.0
+        val_toxicity_loss = 0.0
+        
+        with torch.no_grad():
+            for val_batch, val_true_embeddings, val_true_tox, _ in val_data:
+                val_batch = val_batch.to(device)
+                val_true_embeddings = val_true_embeddings.to(device)
+                val_true_tox = val_true_tox.to(device)
+
+                val_batch_predicted = model(val_batch)
+                val_batch_predicted_embeddings = val_batch_predicted[:, :512]
+                val_batch_predicted_tox = val_batch_predicted[:, 512:]
+
+                # Calculate individual losses
+                val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
+                val_loss2 = criterion2(val_batch_predicted_tox, val_true_tox)
+                
+                # Apply lambda weighting
+                val_weighted_loss1 = lambda1 * val_loss1
+                val_weighted_loss2 = lambda2 * val_loss2
+                
+                # Accumulate losses
+                val_loss += (val_weighted_loss1 + val_weighted_loss2).item()
+                val_embedding_loss += val_weighted_loss1.item()
+                val_toxicity_loss += val_weighted_loss2.item()
+                
+        average_val_loss = val_loss / len(val_data)
+        average_val_embedding_loss = val_embedding_loss / len(val_data)
+        average_val_toxicity_loss = val_toxicity_loss / len(val_data)
+
+        # Store losses for this epoch
+        train_losses.append(average_train_loss)
+        val_losses.append(average_val_loss)
+        train_embedding_losses.append(average_train_embedding_loss)
+        train_toxicity_losses.append(average_train_toxicity_loss)
+        val_embedding_losses.append(average_val_embedding_loss)
+        val_toxicity_losses.append(average_val_toxicity_loss)
+
+        if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
+            print(f'Epoch [{epoch+1}/{epochs}]')
+            print(f'   Training loss: {average_train_loss:.6f}')
+            print(f'   Training embedding loss: {average_train_embedding_loss:.6f}')
+            print(f'   Training toxicity loss: {average_train_toxicity_loss:.6f}')
+            print(f'   Validation loss: {average_val_loss:.6f}')
+            print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
+            print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
+    return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, val_embedding_losses, val_toxicity_losses
+
+
+#%%
+# Conditional encoder (ChemNet + Toxicity + Morgan Fingerprints) 
+# batch_size = __
+# epochs = __
+# lr = 0.0001
+# criterion1 = nn.MSELoss()
+# criterion2 = nn.MSELoss()
+criterion3 = nn.MSELoss()
+# output_size = 513
+# num_layers = __
+lambda1 = 1
+lambda2 = 5
+lambda3 = 1
+
+# Conditional Encoder architecture
+class Cond_Encoder_chemnet_tox_morgan(nn.Module):
+    def __init__(self, input_size, output_size, num_layers):
+        super().__init__()
+        layers = []
+        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
+        for i in range(num_layers):
+            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i < num_layers - 1:
+                layers.append(nn.LeakyReLU(inplace=True))
+        self.encoder = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.encoder(x)
+
+def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, 
+                                           lambda1, lambda2, lambda3, device):
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+    # Initialize lists to store losses
+    train_losses = []
+    val_losses = []
+    # Store individual loss components (after lambda weighting)
+    train_embedding_losses = []
+    train_toxicity_losses = []
+    train_morgan_losses = []
+    val_embedding_losses = []
+    val_toxicity_losses = []
+    val_morgan_losses = []
+
+    for epoch in range(epochs):
+        model.train()
+        running_loss = 0.0
+        running_embedding_loss = 0.0
+        running_toxicity_loss = 0.0
+        running_morgan_loss = 0.0
+        
+        for batch, true_embeddings, true_log_tox, true_morgan, _ in train_data:
+            batch = batch.to(device)
+            true_embeddings = true_embeddings.to(device)
+            true_log_tox = true_log_tox.to(device)
+            true_morgan = true_morgan.to(device)
+
+            optimizer.zero_grad()
+            batch_predicted_combined = model(batch)
+            
+            # Embedding Loss
+            batch_predicted_embeddings = batch_predicted_combined[:, :512] # First 512 columns
+            loss1 = criterion1(batch_predicted_embeddings, true_embeddings) # loss1 (embedding loss)
+            # Response Loss
+            batch_predicted_log_tox = batch_predicted_combined[:, 512:513] # 512th column
+            loss2 = criterion2(batch_predicted_log_tox, true_log_tox) # loss2 (toxicity loss)
+            # Morgan Loss
+            batch_predicted_morgan = batch_predicted_combined[:, 513:] # Last 2048 columns
+            loss3 = criterion3(batch_predicted_morgan, true_morgan) # loss3 (morgan loss)
+
+            # Apply lambda weighting
+            weighted_loss1 = lambda1 * loss1
+            weighted_loss2 = lambda2 * loss2
+            weighted_loss3 = lambda3 * loss3
+            
+            # Total loss with modular weights
+            total_loss = weighted_loss1 + weighted_loss2 + weighted_loss3
+
+            total_loss.backward()
+            optimizer.step()
+            
+            # Accumulate losses
+            running_loss += total_loss.item()
+            running_embedding_loss += weighted_loss1.item()
+            running_toxicity_loss += weighted_loss2.item()
+            running_morgan_loss += weighted_loss3.item()
+            
+        average_train_loss = running_loss / len(train_data)
+        average_train_embedding_loss = running_embedding_loss / len(train_data)
+        average_train_toxicity_loss = running_toxicity_loss / len(train_data)
+        average_train_morgan_loss = running_morgan_loss / len(train_data)
+
+        model.eval()
+        val_loss = 0.0
+        val_embedding_loss = 0.0
+        val_toxicity_loss = 0.0
+        val_morgan_loss = 0.0
+        
+        with torch.no_grad():
+            for val_batch, val_true_embeddings, val_true_tox, val_true_morgan, _ in val_data:
+                val_batch = val_batch.to(device)
+                val_true_embeddings = val_true_embeddings.to(device)
+                val_true_tox = val_true_tox.to(device)
+                val_true_morgan = val_true_morgan.to(device)
+
+                val_batch_predicted = model(val_batch)
+                val_batch_predicted_embeddings = val_batch_predicted[:, :512]
+                val_batch_predicted_tox = val_batch_predicted[:, 512:513]
+                val_batch_predicted_morgan = val_batch_predicted[:, 513:]
+
+                # Calculate individual losses
+                val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
+                val_loss2 = criterion2(val_batch_predicted_tox, val_true_tox)
+                val_loss3 = criterion3(val_batch_predicted_morgan, val_true_morgan)
+                
+                # Apply lambda weighting
+                val_weighted_loss1 = lambda1 * val_loss1
+                val_weighted_loss2 = lambda2 * val_loss2
+                val_weighted_loss3 = lambda3 * val_loss3
+                
+                # Accumulate losses
+                val_loss += (val_weighted_loss1 + val_weighted_loss2 + val_weighted_loss3).item()
+                val_embedding_loss += val_weighted_loss1.item()
+                val_toxicity_loss += val_weighted_loss2.item()
+                val_morgan_loss += val_weighted_loss3.item()
+                
+        average_val_loss = val_loss / len(val_data)
+        average_val_embedding_loss = val_embedding_loss / len(val_data)
+        average_val_toxicity_loss = val_toxicity_loss / len(val_data)
+        average_val_morgan_loss = val_morgan_loss / len(val_data)
+
+        # Store losses for this epoch
+        train_losses.append(average_train_loss)
+        val_losses.append(average_val_loss)
+        train_embedding_losses.append(average_train_embedding_loss)
+        train_toxicity_losses.append(average_train_toxicity_loss)
+        train_morgan_losses.append(average_train_morgan_loss)
+        val_embedding_losses.append(average_val_embedding_loss)
+        val_toxicity_losses.append(average_val_toxicity_loss)
+        val_morgan_losses.append(average_val_morgan_loss)
+
+        print(f'Epoch [{epoch+1}/{epochs}]')
+        print(f'   Training loss: {average_train_loss:.6f}')
+        print(f'   Training embedding loss: {average_train_embedding_loss:.6f}')
+        print(f'   Training toxicity loss: {average_train_toxicity_loss:.6f}')
+        print(f'   Training morgan loss: {average_train_morgan_loss:.6f}')
+        print(f'   Validation loss: {average_val_loss:.6f}')
+        print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
+        print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
+        print(f'   Validation morgan loss: {average_val_morgan_loss:.6f}')
+    return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses
