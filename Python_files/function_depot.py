@@ -303,7 +303,7 @@ class ToxMLP_Reg(nn.Module):
     def forward(self, x):
         return self.encoder(x)
 
-def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, criterion, device, config):
+def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterion, device, config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     wandb.init(entity=config['wandb_entity'],
                project=config['wandb_project'],
@@ -957,7 +957,7 @@ def expand_fingerprints_to_matrix(df, smiles_col='SMILES_spectra', fp_col='fp'):
 
 
 # Threshold filter function
-def apply_threshold_filter(df, threshold):
+def apply_threshold_filter(df, threshold, startindx=1, stopindx=-1):
     """
     Applies a threshold filter to spectral data, setting values below threshold to zero.
     
@@ -972,8 +972,8 @@ def apply_threshold_filter(df, threshold):
     # Create a copy to avoid modifying the original
     filtered_df = df.copy()
     
-    # Get spectral columns (all except first and last column)
-    spectral_cols = filtered_df.columns[1:-1]
+    # Get spectral columns (all except start and stop indexes)
+    spectral_cols = filtered_df.columns[startindx:stopindx]
     
     # Ensure spectral data is numeric
     # filtered_df[spectral_cols] = filtered_df[spectral_cols].apply(pd.to_numeric, errors='coerce')
@@ -987,7 +987,7 @@ def apply_threshold_filter(df, threshold):
     return filtered_df
 
 # Uniform binning function
-def bin_spectra_by_mz_range(df, bin_size):
+def bin_spectra_by_mz_range(df, bin_size, indx_id_indx, startindx=1, stopindx=-1):
     """
     Bins spectra data by grouping m/z columns into ranges of specified size.
     
@@ -999,8 +999,8 @@ def bin_spectra_by_mz_range(df, bin_size):
     DataFrame with SMILES column, binned m/z columns named by bin midpoints, and index_id column
     """
     smiles_col = df.columns[0]
-    index_col = df.columns[-1]  # Preserve the last column (index_id)
-    mz_cols = df.columns[1:-1]  # Exclude first and last columns
+    index_col = df.columns[indx_id_indx]  # Preserve the last column (index_id)
+    mz_cols = df.columns[startindx:stopindx]  # Exclude first and last columns
     
     # Create bins and assign each m/z to a bin
     bin_assignments = {}
@@ -1031,7 +1031,7 @@ def bin_spectra_by_mz_range(df, bin_size):
     return result_df
 
 # Bin filling function
-def fill_missing_bins(df, bin_size):
+def fill_missing_bins(df, bin_size, indx_id_indx, startindx=1, stopindx=-1):
     """
     Fills in missing bin columns in a binned DataFrame.
     
@@ -1043,8 +1043,8 @@ def fill_missing_bins(df, bin_size):
     DataFrame with all missing bin midpoints filled in with zeros
     """
     smiles_col = df.columns[0]
-    index_col = df.columns[-1]  # Preserve the last column (index_id)
-    existing_bins = sorted([col for col in df.columns[1:-1] if isinstance(col, (int, float))])
+    index_col = df.columns[indx_id_indx]  # Preserve the last column (index_id)
+    existing_bins = sorted([col for col in df.columns[startindx:stopindx] if isinstance(col, (int, float))])
     
     if not existing_bins:
         return df
@@ -1078,7 +1078,7 @@ def fill_missing_bins(df, bin_size):
     
     return result_df
 
-def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory):
+def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory, indx_id_indx=-1, startindx=1, stopindx=-1):
     """
     Creates all binned and thresholded datasets for a complete grid search.
     
@@ -1115,14 +1115,14 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory)
                 current_data = df_spectra_original.copy()
             
                 # Apply threshold filtering first
-                threshold_filtered_data = apply_threshold_filter(current_data, threshold)
+                threshold_filtered_data = apply_threshold_filter(current_data, threshold, startindx, stopindx)
                 
                 # Then apply binning
-                binned_data = bin_spectra_by_mz_range(threshold_filtered_data, bin_size)
+                binned_data = bin_spectra_by_mz_range(threshold_filtered_data, bin_size, indx_id_indx, startindx, stopindx)
             
                 # Fill missing bins
-                filled_data = fill_missing_bins(binned_data, bin_size)
-            
+                filled_data = fill_missing_bins(binned_data, bin_size, indx_id_indx, startindx, stopindx)
+
                 # Add response and log response values
                 final_data = add_response_and_log_response(filled_data, df_original)
                 

@@ -1,142 +1,34 @@
-# Package imports
+# Basic Package Imports
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import requests
 import seaborn as sns
-import os
-# from fcd_torch import FCD
+
+# Non-basic package imports
 import torch
-
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.decomposition import PCA
-
-from fcd_torch import FCD
-import rdkit
-
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
-import functions_enc as f
+import requests
 
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import f1_score
+# Packages I don't understand
+from fcd_torch import FCD
+import rdkit
 from collections import Counter
+import gc
+import pickle
+
+# Add the Python_files directory to the Python path
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
+
+# Now you can import your modules
+import functions_enc as f
+import function_depot as fd
 
 ##### ==================== GLOBAL REWRITE OF TRAINING PROCESS ==================== #####
 # The big idea of this rewrite is to change the metric we evaulate by. Thus far we have stuck to MSE as our loss function and this
 # swaps to mean OR median percent error as a written class and loss function to train with consistency to the metric of import to us.
-def create_dataset_tensors_emb_tox(spectra_dataset, embedding_df, device, start_idx=None, stop_idx=None):
-
-    spectra = spectra_dataset.iloc[:,1:-3]
-    
-    # Force conversion to float64 for all spectra columns
-    spectra_numeric = spectra.astype(float)
-
-    # create tensors of spectra, true embeddings, true toxicity values, and chemical name encodings for train and val
-    chem_labels = list(spectra_dataset['SMILES_spectra'])
-    
-    # Ensure log_response is float
-    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values.astype(float)).unsqueeze(1).to(device)
-    
-    # More efficient embedding lookup
-    # Create a lookup dictionary for faster access
-    embedding_dict = {}
-    for _, row in embedding_df.iterrows():
-        smiles = row['SMILES_spectra']
-        embedding_dict[smiles] = row.iloc[1:].values.astype(float)
-    
-    # Build embeddings array efficiently
-    embeddings_list = []
-    for chem_name in chem_labels:
-        if chem_name in embedding_dict:
-            embeddings_list.append(embedding_dict[chem_name])
-        else:
-            # Fallback - use zeros if embedding not found
-            embeddings_list.append(np.zeros(512))
-    
-    embeddings_array = np.array(embeddings_list)
-    embeddings_tensor = torch.Tensor(embeddings_array).to(device)
-    
-    # Use the float-converted spectra
-    spectra_tensor = torch.Tensor(spectra_numeric.values.astype(float)).to(device)
-    
-    # Ensure index is float
-    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy().astype(float)).to(device)
-
-    return embeddings_tensor, log_tox_tensor, spectra_tensor, spectra_indices_tensor
-
-# Add the 'Response' and 'log_response' columns
-def add_response_and_log_response(spectra_df, original_df, smiles_col='SMILES_spectra'):
-    """
-    Adds 'Response' and 'log_response' columns to spectra_df by mapping from original_df using the SMILES column.
-    """
-    smiles_to_response = original_df.drop_duplicates(subset=smiles_col).set_index(smiles_col)['Response']
-    spectra_df['Response'] = spectra_df[smiles_col].map(smiles_to_response)
-    spectra_df['log_response'] = np.log(spectra_df['Response'])
-    return spectra_df
-
-# Custom loss functions - FIXED VERSION
-class MedianAbsolutePercentError(nn.Module):
-    def __init__(self, epsilon=1e-8):
-        super().__init__()
-        self.epsilon = epsilon
-    
-    def forward(self, pred, true):
-        # Clamp inputs to prevent overflow
-        pred_clamped = torch.clamp(pred, min=-10, max=10)
-        true_clamped = torch.clamp(true, min=-10, max=10)
-        
-        # Convert from log space to original space
-        pred_exp = torch.exp(pred_clamped)
-        true_exp = torch.exp(true_clamped)
-        
-        # Add epsilon to prevent division by zero
-        true_exp_safe = true_exp + self.epsilon
-        
-        # Calculate absolute percent error with clamping
-        percent_error = torch.abs(pred_exp - true_exp) / true_exp_safe
-        percent_error = torch.clamp(percent_error, max=10.0)  # Cap at 1000% error
-        
-        # Return median
-        return torch.median(percent_error)
-
-class MeanAbsolutePercentError(nn.Module):
-    def __init__(self, epsilon=1e-8):
-        super().__init__()
-        self.epsilon = epsilon
-    
-    def forward(self, pred, true):
-        # Clamp inputs to prevent overflow
-        pred_clamped = torch.clamp(pred, min=-10, max=10)
-        true_clamped = torch.clamp(true, min=-10, max=10)
-        
-        # Convert from log space to original space
-        pred_exp = torch.exp(pred_clamped)
-        true_exp = torch.exp(true_clamped)
-        
-        # Add epsilon to prevent division by zero
-        true_exp_safe = true_exp + self.epsilon
-        
-        # Calculate absolute percent error with clamping
-        percent_error = torch.abs(pred_exp - true_exp) / true_exp_safe
-        percent_error = torch.clamp(percent_error, max=10.0)  # Cap at 1000% error
-        
-        # Return mean
-        return torch.mean(percent_error)
-
-# Alternative: Simpler approach - use MSE in log space
-class LogSpaceMSE(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.mse = nn.MSELoss()
-    
-    def forward(self, pred, true):
-        return self.mse(pred, true)
-
 
 # Conditional Encoder Architecture: Set the parameters and the loss function from the classes defined above.
 output_size = 513
@@ -144,137 +36,22 @@ num_layers = 4
 batch_size = 512
 epochs=1000
 lr = 0.0003
-criterion1=nn.MSELoss() # Still use MSELoss for the embedding criterion
-
-# This allows us to easily change the toxicity prediction criterion of 4 options
-# Options: 'mse', 'median_ape', 'mean_ape'
-tox_criterion_type = 'mse'  # Start with this safer option
-
-if tox_criterion_type == 'mse':
-    criterion2 = nn.MSELoss()
-elif tox_criterion_type == 'median_ape':
-    criterion2 = MedianAbsolutePercentError()
-elif tox_criterion_type == 'mean_ape':
-    criterion2 = MeanAbsolutePercentError()
-else:
-    raise ValueError("tox_criterion_type must be 'mse', 'median_ape', or 'mean_ape'")
+criterion=nn.MSELoss() # Still use MSELoss for the embedding criterion
 
 #%%
 # Encoder architecture (With Validation Set)
-class Cond_Encoder(nn.Module):
-    def __init__(self, input_size, output_size, num_layers):
-        super().__init__()
-        layers = []
-        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-        for i in range(num_layers):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-            if i < num_layers - 1:
-                layers.append(nn.LeakyReLU(inplace=True))
-        self.encoder = nn.Sequential(*layers)
 
-    def forward(self, x):
-        return self.encoder(x)
-
-def train_model_condenc(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, device):
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    
-    # Add gradient clipping to prevent explosion
-    # max_grad_norm = 1.0
-
-    for epoch in range(epochs):
-        model.train()
-        running_loss = 0.0
-        batch_count = 0
-        
-        for batch, true_embeddings, true_log_tox, _ in train_data:
-            batch = batch.to(device)
-            true_embeddings = true_embeddings.to(device)
-            true_log_tox = true_log_tox.to(device)
-
-            optimizer.zero_grad()
-            batch_predicted_combined = model(batch)
-            
-            # Embedding Loss
-            batch_predicted_embeddings = batch_predicted_combined[:, :512]
-            loss1 = criterion1(batch_predicted_embeddings, true_embeddings)
-            
-            # Response Loss
-            batch_predicted_log_tox = batch_predicted_combined[:, 512:]
-            loss2 = criterion2(batch_predicted_log_tox, true_log_tox)
-
-            # print(loss1, loss2) # So we see what the losses are to pin on what lambda should be
-            total_loss = loss1 + (5 * loss2) # lambda = 5 make the prediction accuracy much more important
-
-            # Check for NaN loss and skip if found
-            if torch.isnan(total_loss):
-                print(f"NaN loss detected in epoch {epoch+1}, batch {batch_count}, skipping...")
-                continue
-                
-            total_loss.backward()
-            
-            # Clip gradients to prevent explosion
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
-            
-            optimizer.step()
-            running_loss += total_loss.item()
-            batch_count += 1
-        
-        if batch_count > 0:
-            average_train_loss = running_loss / batch_count
-        else:
-            average_train_loss = float('inf')
-
-        # Validation loop with similar protections
-        model.eval()
-        val_loss = 0.0
-        val_batch_count = 0
-        
-        with torch.no_grad():
-            for val_batch, val_true_embeddings, val_true_tox, _ in val_data:
-                val_batch = val_batch.to(device)
-                val_true_embeddings = val_true_embeddings.to(device)
-                val_true_tox = val_true_tox.to(device)
-
-                val_batch_predicted = model(val_batch)
-                val_batch_predicted_embeddings = val_batch_predicted[:, :512]
-                val_batch_predicted_tox = val_batch_predicted[:, 512:]
-
-                val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
-                val_loss2 = criterion2(val_batch_predicted_tox, val_true_tox)
-                batch_val_loss = val_loss1 + val_loss2
-                
-                if not torch.isnan(batch_val_loss):
-                    val_loss += batch_val_loss.item()
-                    val_batch_count += 1
-        
-        if val_batch_count > 0:
-            average_val_loss = val_loss / val_batch_count
-        else:
-            average_val_loss = float('inf')
-
-        # Print every 10 epochs to reduce spam
-        if epoch % 10 == 0 or epoch == epochs - 1:
-            print(f'Epoch [{epoch+1}/{epochs}]')
-            print(f'   Training loss: {average_train_loss:.6f}')
-            print(f'   Validation loss: {average_val_loss:.6f}')
-        
-        # Early stopping if losses become problematic
-        if torch.isnan(torch.tensor(average_train_loss)) or torch.isnan(torch.tensor(average_val_loss)):
-            print(f"Training stopped at epoch {epoch+1} due to NaN losses")
-            break
-
-    return model
 
 # CONDITIONAL ENCODER TRAINING LOOP - Process all grid search datasets
 print("=== CONDITIONAL ENCODER GRID SEARCH TRAINING ===")
-print(f"Using toxicity criterion: {tox_criterion_type}")
+print(f"Using toxicity criterion: {criterion}")
 
 # Set up device and load ChemNet reference
 device = f.set_up_gpu()
-name_smiles_embedding_df = pd.read_csv("/home/dlipsey/MITLincolnLabs/MIT_LL_data/ChemNet_of_df4_QQpos.csv")
+name_smiles_embedding_df = pd.read_csv("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df5_chemnet.csv")
 
 # Load the original dataset for response mapping
-df4_QQpos = pd.read_csv("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df4_QQpos.csv")
+df5_subset = pd.read_csv("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df5_subset.csv")
 
 # Define folders
 grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes"
@@ -348,14 +125,14 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         train_data_copy = train_data.copy()
         test_data_copy = test_data.copy()
         
-        train_data_processed = add_response_and_log_response(train_data_copy, df4_QQpos, smiles_col='SMILES_spectra')
-        test_data_processed = add_response_and_log_response(test_data_copy, df4_QQpos, smiles_col='SMILES_spectra')
+        train_data_processed = fd.add_response_and_log_response(train_data_copy, df5_subset, smiles_col='SMILES_spectra')
+        test_data_processed = fd.add_response_and_log_response(test_data_copy, df5_subset, smiles_col='SMILES_spectra')
         
         # Create tensors
-        y_train_emb, y_train_tox, x_train, train_indices_tensor = create_dataset_tensors_emb_tox(
+        y_train_emb, y_train_tox, x_train, train_indices_tensor = fd.create_dataset_tensors_emb_tox(
             train_data_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
 
-        y_val_emb, y_val_tox, x_val, val_indices_tensor = create_dataset_tensors_emb_tox(
+        y_val_emb, y_val_tox, x_val, val_indices_tensor = fd.create_dataset_tensors_emb_tox(
             test_data_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
         
         # Create data loaders
@@ -365,10 +142,10 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
         
         # Create and train conditional encoder
-        cond_encoder_current = Cond_Encoder(input_size=x_train.shape[1], output_size=output_size, num_layers=num_layers).to(device)
+        cond_encoder_current = fd.Cond_Encoder(input_size=x_train.shape[1], output_size=output_size, num_layers=num_layers).to(device)
         
         # Train conditional encoder
-        trained_cond_encoder = train_model_condenc(
+        trained_cond_encoder = fd.train_model_condenc(
             model=cond_encoder_current,
             train_data=train_loader,
             val_data=val_loader,
