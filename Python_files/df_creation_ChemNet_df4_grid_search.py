@@ -118,7 +118,6 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             # Dataset-specific parameters
             'Bin': bin_size,
             'Threshold': threshold,
-            'Dataset_Name': dataset_name,
             'Original_Features': None,  # Will be updated after loading data
         }
         
