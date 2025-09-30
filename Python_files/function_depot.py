@@ -16,6 +16,7 @@ from fcd_torch import FCD
 import seaborn as sns
 import poetry
 ### ======================================================= WANDB CONFIGS ====================================================== ###
+# These are default and basic, when running larger runs I will need to add more parameters in the pyhon files themselves
 chemnet_config = {
         'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
         'wandb_project': 'MIT-Lincoln-Lab',
@@ -85,8 +86,8 @@ class ChemNet_Encoder(nn.Module):
     def forward(self, x):
         return self.encoder(x)
 
-def train_model_chemnet_encoder(model, train_data, val_data, epochs, learning_rate, criterion, device):
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, config = chemnet_config)
+def train_model_chemnet_encoder(model, train_data, val_data, epochs, learning_rate, criterion, device, config = chemnet_config):
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     wandb.init(entity=config['wandb_entity'],
                project=config['wandb_project'],
                config=config)    
@@ -107,7 +108,7 @@ def train_model_chemnet_encoder(model, train_data, val_data, epochs, learning_ra
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
-        average_train_loss = running_loss / len(train_loader) 
+        average_train_loss = running_loss / len(train_data) 
         wandb.log({"average_train_loss": average_train_loss})
 
         model.eval()
@@ -121,7 +122,7 @@ def train_model_chemnet_encoder(model, train_data, val_data, epochs, learning_ra
 
                 val_batch_loss = criterion(val_batch_predicted_embeddings, val_true_embeddings)  
                 val_loss += val_batch_loss.item() 
-        average_val_loss = val_loss / len(val_loader) 
+        average_val_loss = val_loss / len(val_data) 
         wandb.log({"average_val_loss": average_val_loss})
 
         # Store losses for this epoch
@@ -238,6 +239,71 @@ class SpecToxMLP_Reg(nn.Module):
         return self.encoder(x)
 
 def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, criterion, device, config = spectra_config):
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    wandb.init(entity=config['wandb_entity'],
+               project=config['wandb_project'],
+               config=config) 
+    # Initialize lists to store losses
+    train_losses = []
+    val_losses = []
+
+    for epoch in range(epochs):
+        model.train()
+        running_loss = 0.0
+        for batch, true_log_tox, _ in train_data:
+            batch = batch.to(device)
+            true_log_tox = true_log_tox.to(device)
+
+            optimizer.zero_grad()
+            batch_predicted_log_tox = model(batch)
+            loss = criterion(batch_predicted_log_tox, true_log_tox)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+        average_train_loss = running_loss / len(train_data)
+        wandb.log({"average_train_loss": average_train_loss})
+
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for val_batch, val_true_tox, _ in val_data:
+                val_batch = val_batch.to(device)
+                val_true_tox = val_true_tox.to(device)
+
+                val_batch_predicted_tox = model(val_batch)
+
+                val_batch_loss = criterion(val_batch_predicted_tox, val_true_tox)
+                val_loss += val_batch_loss.item()
+        average_val_loss = val_loss / len(val_data)
+        wandb.log({"average_val_loss": average_val_loss})
+
+        # Store losses for this epoch
+        train_losses.append(average_train_loss)
+        val_losses.append(average_val_loss)
+
+        print(f'Epoch [{epoch+1}/{epochs}]')
+        print(f'   Training loss: {average_train_loss:.6f}')
+        print(f'   Validation loss: {average_val_loss:.6f}')
+    wandb.finish()
+    return model, train_losses, val_losses
+
+
+# GENERAL TOXICITY MLP
+class ToxMLP_Reg(nn.Module):
+    def __init__(self, input_size, output_size, num_layers):
+        super().__init__()
+        layers = []
+        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
+        for i in range(num_layers):
+            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i < num_layers - 1:
+                layers.append(nn.LeakyReLU(inplace=True))
+        self.encoder = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.encoder(x)
+
+def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, criterion, device, config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     wandb.init(entity=config['wandb_entity'],
                project=config['wandb_project'],
@@ -504,7 +570,7 @@ def train_model_condenc_chemnet_tox(model, train_data, val_data, epochs, learnin
 # lr = 0.0001
 # criterion1 = nn.MSELoss()
 # criterion2 = nn.MSELoss()
-criterion3 = nn.MSELoss()
+# criterion3 = nn.MSELoss()
 # output_size = 513
 # num_layers = __
 lambda1 = 1
@@ -532,9 +598,11 @@ def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, 
     wandb.init(entity=config['wandb_entity'],
                project=config['wandb_project'],
                config=config) 
+               
     # Initialize lists to store losses
     train_losses = []
     val_losses = []
+    
     # Store individual loss components (after lambda weighting)
     train_embedding_losses = []
     train_toxicity_losses = []
@@ -1160,6 +1228,80 @@ def create_dataset_tensors(spectra_dataset, embedding_df, device, start_idx=None
     spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
 
     return embeddings_tensor, spectra_tensor, spectra_indices_tensor
+
+
+
+def create_dataset_tensors_fixed(spectra_dataset, embedding_df, device, start_idx=None, stop_idx=None):
+    """
+    Create tensors from the provided spectra dataset and embedding DataFrame.
+
+    Parameters:
+    ----------
+    spectra_dataset : pd.DataFrame
+        DataFrame containing spectral data and chemical labels. Assumes specific 
+        columns for processing based on the `carl` flag.
+
+    embedding_df : pd.DataFrame
+        DataFrame containing embeddings for chemicals, with 'Embedding Floats' 
+        column corresponding to ChemNet embeddings.
+
+    device : torch.device
+        The device (CPU or GPU) on which to store the tensors.
+
+    start_idx : int, optional
+        Start index for spectra columns
+        
+    stop_idx : int, optional
+        Stop index for spectra columns
+
+    Returns:
+    -------
+    tuple
+        A tuple containing:
+        - embeddings_tensor (torch.Tensor): Tensor of true embeddings for the chemicals.
+        - spectra_tensor (torch.Tensor): Tensor of spectral data.
+        - spectra_indices_tensor (torch.Tensor): Tensor of indices corresponding to the spectra.
+    """
+    # Filter spectra_dataset to only include SMILES that exist in embedding_df
+    available_smiles = set(embedding_df['SMILES_spectra'].values)
+    spectra_smiles = set(spectra_dataset['SMILES_spectra'].values)
+    
+    missing_smiles = spectra_smiles - available_smiles
+    if missing_smiles:
+        print(f"Warning: {len(missing_smiles)} SMILES from spectra dataset not found in embeddings")
+        print(f"First few missing: {list(missing_smiles)[:5]}")
+        
+        # Filter to only include SMILES that have embeddings
+        mask = spectra_dataset['SMILES_spectra'].isin(available_smiles)
+        spectra_dataset_filtered = spectra_dataset[mask].copy()
+        
+        print(f"Filtered dataset from {len(spectra_dataset)} to {len(spectra_dataset_filtered)} samples")
+    else:
+        spectra_dataset_filtered = spectra_dataset
+        print("All SMILES found in embeddings dataset")
+    
+    # Get spectra using filtered dataset
+    spectra = spectra_dataset_filtered.iloc[:,start_idx:stop_idx]
+    
+    # Create tensors using filtered dataset
+    chem_labels = list(spectra_dataset_filtered['SMILES_spectra'])
+    
+    # Create embeddings tensor - now all SMILES should exist in embedding_df
+    embeddings_list = []
+    for chem_name in chem_labels:
+        embedding_row = embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name]
+        if len(embedding_row) > 0:
+            embeddings_list.append(embedding_row.iloc[0, 1:].values.astype(float))
+        else:
+            raise ValueError(f"SMILES {chem_name} not found in embeddings after filtering")
+    
+    embeddings_tensor = torch.Tensor(embeddings_list).to(device)
+    spectra_tensor = torch.Tensor(spectra.values).to(device)
+    spectra_indices_tensor = torch.Tensor(spectra_dataset_filtered['index'].to_numpy()).to(device)
+
+    return embeddings_tensor, spectra_tensor, spectra_indices_tensor
+
+
 
 def create_dataset_tensors_tox(spectra_dataset,device, start_idx=None, stop_idx=None):
 
