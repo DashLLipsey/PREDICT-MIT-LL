@@ -31,38 +31,31 @@ chemnet_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/chemnet_grid_search_d
 
 # ENCODER TRAINING LOOP - Process all datasets
 device = fd.set_up_gpu()
+# device = torch.device('cpu')
 name_smiles_embedding_df = pd.read_csv("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df5_chemnet.csv")
 
 # Get all dataset files from the grid search folder
 grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes"
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.pkl') and 'df_spectra' in f]
 
-# # Filter out datasets with bin size 0.01 and 0.05
-# filtered_dataset_files = []
-# for f in dataset_files:
-#     # Check if the file contains bin0_01 or bin0_05 (which represents bin sizes 0.01 and 0.05)
-#     if 'bin0_01' not in f and 'bin0_05' not in f:
-#         filtered_dataset_files.append(f)
-#     else:
-#         if 'bin0_01' in f:
-#             print(f"Skipping bin size 0.01 dataset: {f}")
-#         if 'bin0_05' in f:
-#             print(f"Skipping bin size 0.05 dataset: {f}")
-
-# Filter out datasets with bin size 0.01
+# Filter out datasets with bin size 0.01 and 0.05
 filtered_dataset_files = []
 for f in dataset_files:
-    # Check if the file contains bin0_01 (which represents bin size 0.01)
-    if 'bin0_01' not in f:
+    # Check if the file contains bin0_01 or bin0_05 (which represents bin sizes 0.01 and 0.05)
+    if 'bin0_01' not in f and 'bin0_05' not in f and 'bin0_1' not in f:
         filtered_dataset_files.append(f)
     else:
-        print(f"Skipping bin size 0.01 dataset: {f}")
+        if 'bin0_01' in f:
+            print(f"Skipping bin size 0.01 dataset: {f}")
+        if 'bin0_05' in f:
+            print(f"Skipping bin size 0.05 dataset: {f}")
+        if 'bin0_1' in f:
+            print(f"Skipping bin size 0.1 dataset: {f}")
 
 dataset_names = [f.replace('.pkl', '') for f in filtered_dataset_files]
 
 print(f"Found {len(dataset_files)} total datasets")
-print(f"After filtering out bin size 0.01: {len(dataset_names)} datasets to process")
-
+print(f"After filtering out bin size 0.01, 0.05, and 0.1: {len(dataset_names)} datasets to process")
 # Function to extract bin size and threshold from dataset name
 def parse_dataset_name(dataset_name):
     """Extract bin size and threshold from dataset name"""
@@ -128,12 +121,25 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         print(f"Loaded {dataset_name} - Shape: {current_dataset.shape}")
         print(f"Config - Bin: {bin_size}, Threshold: {threshold}")
         
-        # Fix data types
-        for col in current_dataset.columns:
-            if col not in ['SMILES_spectra', 'index_id']:
-                current_dataset[col] = pd.to_numeric(current_dataset[col], errors='coerce').fillna(0.0)
-                current_dataset[col] = current_dataset[col].astype(np.float32)
-        
+        print(f"Loaded {dataset_name} - Shape: {current_dataset.shape}")
+        print(f"Config - Bin: {bin_size}, Threshold: {threshold}")
+
+        # Fix data types - be more selective about which columns to convert
+        exclude_cols = ['SMILES_spectra', 'index_id', 'Group', 'Response', 'log_response']
+        numeric_cols = [col for col in current_dataset.columns if col not in exclude_cols]
+
+        for col in numeric_cols:
+            try:
+                if current_dataset[col].dtype == 'object':
+                    current_dataset[col] = pd.to_numeric(current_dataset[col], errors='coerce')
+                current_dataset[col] = current_dataset[col].fillna(0.0).astype(np.float32)
+            except Exception as e:
+                print(f"Warning: Could not convert column {col}: {str(e)}")
+                continue
+
+        # Apply train/test split
+        counts = current_dataset['SMILES_spectra'].value_counts()
+
         # Apply train/test split
         counts = current_dataset['SMILES_spectra'].value_counts()
         valid_smiles = counts[counts >= 4].index
@@ -165,10 +171,10 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         
         # Create tensors
         y_train_enc, x_train_enc, train_indices_tensor = fd.create_dataset_tensors(
-            train_data_current, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
+            train_data_current, name_smiles_embedding_df, device, start_idx=1, stop_idx=-3)
         
         y_val_enc, x_val_enc, val_indices_tensor = fd.create_dataset_tensors(
-            test_data_current, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
+            test_data_current, name_smiles_embedding_df, device, start_idx=1, stop_idx=-3)
         
         print(f"Training tensor shapes: x_train: {x_train_enc.shape}, y_train: {y_train_enc.shape}")
         
@@ -181,10 +187,10 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         val_loader_enc = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
         
         # Create and train encoder
-        encoder_current = fd.Encoder(input_size=x_train_enc.shape[1], output_size=output_size, num_layers=num_layers).to(device)
+        encoder_current = fd.ChemNet_Encoder(input_size=x_train_enc.shape[1], output_size=output_size, num_layers=num_layers).to(device)
         
         # Train encoder with adaptive config
-        trained_encoder = fd.train_model_encoder(
+        trained_encoder = fd.train_model_chemnet_encoder(
             model=encoder_current,
             train_data=train_loader_enc,
             val_data=val_loader_enc,
