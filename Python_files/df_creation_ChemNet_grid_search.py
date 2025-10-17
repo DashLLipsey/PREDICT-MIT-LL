@@ -75,12 +75,12 @@ encoder_results = []
 chemnet_datasets = {}
 
 # Training parameters
-batch_size = 128
-epochs=150
+batch_size = 512
+epochs=300
 lr=0.0001
 criterion=nn.MSELoss()
 output_size = 512
-num_layers = 10
+num_layers = 4
 
 # Loop through each dataset
 for i, dataset_name in enumerate(sorted(dataset_names), 1):

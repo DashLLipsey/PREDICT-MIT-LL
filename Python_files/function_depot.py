@@ -784,14 +784,14 @@ def train_model_condenc_full(model, train_data, val_data, epochs, learning_rate,
         running_toxicity_loss = 0.0
         running_morgan_loss = 0.0
         
-        for batch, true_embeddings, true_log_tox, true_morgan, _ in train_data:
-            batch = batch.to(device)
+        for batch_with_group, true_embeddings, true_log_tox, true_morgan, _ in train_data:
+            batch_with_group = batch_with_group.to(device)  # Input includes spectra + group encoding
             true_embeddings = true_embeddings.to(device)
             true_log_tox = true_log_tox.to(device)
             true_morgan = true_morgan.to(device)
 
             optimizer.zero_grad()
-            batch_predicted_combined = model(batch)
+            batch_predicted_combined = model(batch_with_group)  # Forward pass with group info
             
             # Embedding Loss
             batch_predicted_embeddings = batch_predicted_combined[:, :512] # First 512 columns
@@ -808,7 +808,7 @@ def train_model_condenc_full(model, train_data, val_data, epochs, learning_rate,
             weighted_loss2 = lambda2 * loss2
             weighted_loss3 = lambda3 * loss3
             
-            # Total loss with modular weights
+            # Total loss with modular weights (group is NOT included in loss)
             total_loss = weighted_loss1 + weighted_loss2 + weighted_loss3
 
             total_loss.backward()
@@ -836,18 +836,18 @@ def train_model_condenc_full(model, train_data, val_data, epochs, learning_rate,
         val_morgan_loss = 0.0
         
         with torch.no_grad():
-            for val_batch, val_true_embeddings, val_true_tox, val_true_morgan, _ in val_data:
-                val_batch = val_batch.to(device)
+            for val_batch_with_group, val_true_embeddings, val_true_tox, val_true_morgan, _ in val_data:
+                val_batch_with_group = val_batch_with_group.to(device)  # Input includes spectra + group encoding
                 val_true_embeddings = val_true_embeddings.to(device)
                 val_true_tox = val_true_tox.to(device)
                 val_true_morgan = val_true_morgan.to(device)
 
-                val_batch_predicted = model(val_batch)
+                val_batch_predicted = model(val_batch_with_group)  # Forward pass with group info
                 val_batch_predicted_embeddings = val_batch_predicted[:, :512]
                 val_batch_predicted_tox = val_batch_predicted[:, 512:513]
                 val_batch_predicted_morgan = val_batch_predicted[:, 513:]
 
-                # Calculate individual losses
+                # Calculate individual losses (group is NOT included in loss calculation)
                 val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
                 val_loss2 = criterion2(val_batch_predicted_tox, val_true_tox)
                 val_loss3 = criterion3(val_batch_predicted_morgan, val_true_morgan)
@@ -893,7 +893,6 @@ def train_model_condenc_full(model, train_data, val_data, epochs, learning_rate,
         print(f'   Validation morgan loss: {average_val_morgan_loss:.6f}')
     wandb.finish()
     return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses
-
 
 # Conditional encoder (ChemNet + Toxicity + Morgan Fingerprints + group(external condition)) 
 # INCLUDES GROUP CONDITION AS INPUT BUT NOT IN LOSS
@@ -1554,7 +1553,7 @@ def create_dataset_tensors(spectra_dataset, embedding_df, device, start_idx=None
     """
     spectra = spectra_dataset.iloc[:,start_idx:stop_idx]
 
-    # create tensors of spectra, true embeddings, and chemical name encodings for train and val
+    # create tensors of spectra, true embeddings, and spectra indices
     chem_labels = list(spectra_dataset['SMILES_spectra'])
     embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
     spectra_tensor = torch.Tensor(spectra.values).to(device)
@@ -1599,8 +1598,6 @@ def create_dataset_tensors_emb_tox(spectra_dataset, embedding_df, device, start_
     spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
 
     return embeddings_tensor, log_tox_tensor, spectra_tensor, spectra_indices_tensor 
-
-# ...existing code...
 
 def create_dataset_tensors_condenc_full(spectra_dataset, embedding_df, morgan_df, device, start_idx=None, stop_idx=None):
     """
