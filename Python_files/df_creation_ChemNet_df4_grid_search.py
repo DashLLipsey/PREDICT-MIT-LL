@@ -32,7 +32,7 @@ chemnet_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/chemnet_grid_search_d
 # ENCODER TRAINING LOOP - Process all datasets
 device = fd.set_up_gpu()
 # device = torch.device('cpu')
-name_smiles_embedding_df = pd.read_csv("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df5_chemnet.csv")
+name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df5_chemnet.parquet")
 
 # Get all dataset files from the grid search folder
 grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes"
@@ -42,20 +42,15 @@ dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.pkl')
 filtered_dataset_files = []
 for f in dataset_files:
     # Check if the file contains bin0_01 or bin0_05 (which represents bin sizes 0.01 and 0.05)
-    if 'bin0_01' not in f and 'bin0_05' not in f and 'bin0_1' not in f:
+    if 'bin0_01' not in f:
         filtered_dataset_files.append(f)
     else:
         if 'bin0_01' in f:
             print(f"Skipping bin size 0.01 dataset: {f}")
-        if 'bin0_05' in f:
-            print(f"Skipping bin size 0.05 dataset: {f}")
-        if 'bin0_1' in f:
-            print(f"Skipping bin size 0.1 dataset: {f}")
 
 dataset_names = [f.replace('.pkl', '') for f in filtered_dataset_files]
 
 print(f"Found {len(dataset_files)} total datasets")
-print(f"After filtering out bin size 0.01, 0.05, and 0.1: {len(dataset_names)} datasets to process")
 # Function to extract bin size and threshold from dataset name
 def parse_dataset_name(dataset_name):
     """Extract bin size and threshold from dataset name"""
@@ -80,8 +75,8 @@ encoder_results = []
 chemnet_datasets = {}
 
 # Training parameters
-batch_size = 64
-epochs=1000
+batch_size = 128
+epochs=150
 lr=0.0001
 criterion=nn.MSELoss()
 output_size = 512

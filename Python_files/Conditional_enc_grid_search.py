@@ -16,6 +16,7 @@ import rdkit
 from collections import Counter
 import gc
 import pickle
+import wandb
 
 # Add the Python_files directory to the Python path
 import sys
@@ -29,6 +30,27 @@ import function_depot as fd
 ##### ==================== GLOBAL REWRITE OF TRAINING PROCESS ==================== #####
 # The big idea of this rewrite is to change the metric we evaulate by. Thus far we have stuck to MSE as our loss function and this
 # swaps to mean OR median percent error as a written class and loss function to train with consistency to the metric of import to us.
+# Function to extract bin size and threshold from dataset name
+def parse_dataset_name(dataset_name):
+    """Extract bin size and threshold from dataset name"""
+    if 'thresh_zero' in dataset_name:
+        # Extract bin size
+        bin_part = dataset_name.split('_thresh_zero')[0].replace('bin', '')
+        bin_size = float(bin_part.replace('_', '.'))
+        threshold = 0.0
+    else:
+        # Extract bin size and threshold
+        parts = dataset_name.split('_thresh')
+        bin_part = parts[0].replace('bin', '')
+        bin_size = float(bin_part.replace('_', '.'))
+        
+        thresh_part = parts[1].split('_df_spectra')[0]
+        threshold = float(thresh_part.replace('_', '.'))
+    
+    return bin_size, threshold
+
+# Storage for conditional encoder results
+cond_encoder_results = [] 
 
 # Conditional Encoder Architecture: Set the parameters and the loss function from the classes defined above.
 output_size = 513
@@ -36,22 +58,25 @@ num_layers = 4
 batch_size = 512
 epochs=1000
 lr = 0.0003
-criterion=nn.MSELoss() # Still use MSELoss for the embedding criterion
+lambda1 = 1
+lambda2 = 5
+# criterion=nn.MSELoss() # Still use MSELoss for the embedding criterion
+criterion1 = nn.MSELoss()
+criterion2 = nn.MSELoss()
 
-#%%
 # Encoder architecture (With Validation Set)
 
 
 # CONDITIONAL ENCODER TRAINING LOOP - Process all grid search datasets
 print("=== CONDITIONAL ENCODER GRID SEARCH TRAINING ===")
-print(f"Using toxicity criterion: {criterion}")
+print(f"Using toxicity criterion: {criterion2}")
 
 # Set up device and load ChemNet reference
 device = f.set_up_gpu()
-name_smiles_embedding_df = pd.read_csv("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df5_chemnet.csv")
+name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df5_chemnet.parquet")
 
 # Load the original dataset for response mapping
-df5_subset = pd.read_csv("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df5_subset.csv")
+df5_subset = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df5_subset.parquet")
 
 # Define folders
 grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes"
@@ -142,18 +167,44 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
         
         # Create and train conditional encoder
-        cond_encoder_current = fd.Cond_Encoder(input_size=x_train.shape[1], output_size=output_size, num_layers=num_layers).to(device)
+        cond_encoder_current = fd.Cond_Encoder_chemnet_tox(input_size=x_train.shape[1], output_size=output_size, num_layers=num_layers).to(device)
         
-        # Train conditional encoder
-        trained_cond_encoder = fd.train_model_condenc(
+        # Parse dataset parameters for wandb config
+        bin_size, threshold = parse_dataset_name(dataset_name)
+        
+        # Create wandb config for this dataset
+        chemnet_tox_config = {
+            'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
+            'wandb_project': 'MIT-Lincoln-Lab-Conditional-Encoder',
+            'wandb_name': f"cond_enc_{dataset_name}",
+            'gpu': True,
+            'encoder_type': "Conditional Encoder ChemNet + Toxicity",
+            # Model hyperparameters
+            'batch_size': batch_size,
+            'output_size': output_size,
+            'num_layers': num_layers,
+            'learning_rate': lr,
+            'epochs': epochs,
+            'lambda1': lambda1,
+            'lambda2': lambda2,
+            # Dataset-specific parameters
+            'Bin': bin_size,
+            'Threshold': threshold,
+        }
+        
+        # Train conditional encoder (wandb init/log/finish handled inside this function)
+        trained_cond_encoder = fd.train_model_condenc_chemnet_tox(
             model=cond_encoder_current,
             train_data=train_loader,
             val_data=val_loader,
             epochs=epochs,
             learning_rate=lr,
+            lambda1=1,
+            lambda2=5,
             criterion1=criterion1,
             criterion2=criterion2,
-            device=device
+            device=device,
+            config=chemnet_tox_config  # Pass the config to your training function
         )
         
         # Generate predictions from the 513th element (index 512) - toxicity regression output
@@ -190,7 +241,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         full_data_processed = pd.concat([train_data_processed, test_data_processed], ignore_index=True)
         
         # Create tensors for full dataset
-        y_full_emb, y_full_tox, x_full, full_indices_tensor = create_dataset_tensors_emb_tox(
+        y_full_emb, y_full_tox, x_full, full_indices_tensor = fd.create_dataset_tensors_emb_tox(
             full_data_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
         
         # Generate conditional encoder outputs

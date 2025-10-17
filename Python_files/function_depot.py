@@ -1594,7 +1594,7 @@ def create_dataset_tensors_emb_tox(spectra_dataset, embedding_df, device, start_
     # create tensors of spectra, true embeddings, true toxicity values, and chemical name encodings for train and val
     chem_labels = list(spectra_dataset['SMILES_spectra'])
     log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
-    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
     spectra_tensor = torch.Tensor(spectra.values).to(device)
     spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
 
