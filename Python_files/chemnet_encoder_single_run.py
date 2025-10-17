@@ -29,14 +29,32 @@ import function_depot as fd
 # Create folder for ChemNet datasets
 chemnet_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/chemnet_grid_search_dataframes"
 
+# Create folder for super test sets if it doesn't exist
+super_test_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/super_test_sets"
+os.makedirs(super_test_folder, exist_ok=True)
+
 # ENCODER TRAINING - Single Dataset
 device = fd.set_up_gpu()
 # device = torch.device('cpu')
 name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df5_chemnet.parquet")
 
+# ====== SUPER TEST SET SMILES (COMMENT OUT TO INCLUDE IN TRAINING) ======
+super_test_smiles = [
+    'NC(=S)Nc1ccccc1',                                  # 6
+    'COc1ccc2c(c1)c(CC(=O)O)c(C)n2C(=O)c1ccc(Cl)cc1',   # 12
+    'CCNc1nc(Cl)nc(NC(C)(C)C#N)n1',                     # 6 
+    'C#CCN(C)Cc1ccccc1',                                # 6
+    'COP(=S)(OC)Oc1ccc(SC)c(C)c1',                      # 6
+    'Nc1cccc2c(N)cccc12',                               # 6
+    'Cn1c(=O)c2c(ncn2CCO)n(C)c1=O',                     # 40
+    'CNC(=O)N(C)c1nnc(C(C)(C)C)s1',                     # 6
+    'Nc1ccc(Sc2ccc(N)cc2)cc1',                          # 15
+    'COc1ccc2ccc(=O)oc2c1CC=C(C)C',                     # 6
+]
+
 # ====== SPECIFY BIN SIZE AND THRESHOLD ======
-bin_size = 0.1  
-threshold = 0.1  
+bin_size = 0.1   # Also try 0.1, 1, 200
+threshold = 50  # Also try 0.1, 50, 100
 
 # Function to create dataset name from bin and threshold
 def create_dataset_name(bin_size, threshold):
@@ -62,7 +80,7 @@ epochs = 500
 lr = 0.0001  
 criterion = nn.MSELoss()
 output_size = 512
-num_layers = 6
+num_layers = 4
 
 try:
     # Create adaptive config for this dataset
@@ -81,6 +99,7 @@ try:
         # Dataset-specific parameters
         'Bin': bin_size,
         'Threshold': threshold,
+        'Super_test': True,
     }
     
     # Load dataset from pickle file
@@ -91,6 +110,20 @@ try:
     current_dataset = pd.read_pickle(dataset_path)
     
     print(f"Loaded {dataset_name} - Shape: {current_dataset.shape}")
+    
+    # ====== REMOVE SUPER TEST SET FROM TRAINING DATA ======
+    # Save super test set before removing
+    super_test_df = current_dataset[current_dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
+    print(f"Super test set size: {len(super_test_df)} samples")
+    print(f"Super test SMILES found: {super_test_df['SMILES_spectra'].nunique()} unique SMILES")
+    
+    # Remove super test set from training data
+    original_count = len(current_dataset)
+    current_dataset = current_dataset[~current_dataset['SMILES_spectra'].isin(super_test_smiles)]
+    removed_count = original_count - len(current_dataset)
+    print(f"Removed {removed_count} samples from super test set")
+    print(f"Dataset shape after removal: {current_dataset.shape}")
+    
     print(f"Config - Bin: {bin_size}, Threshold: {threshold}")
 
     # Fix data types - be more selective about which columns to convert
@@ -191,6 +224,43 @@ try:
     save_path = os.path.join(chemnet_folder, f"{chemnet_dataset_name}.pkl")
     full_chemnet_df.to_pickle(save_path)
     print(f"Saved to: {save_path}")
+
+
+    # ====== GENERATE SUPER TEST SET EMBEDDINGS ======
+    if len(super_test_df) > 0:
+        print(f"\n=== GENERATING SUPER TEST SET EMBEDDINGS ===")
+        
+        # Add index column to super_test_df (required by create_dataset_tensors)
+        super_test_df_with_index = super_test_df.reset_index(drop=True).copy()
+        super_test_df_with_index['index'] = super_test_df_with_index.index
+        
+        # Create super test tensors
+        y_super_test, x_super_test, super_test_indices_tensor = fd.create_dataset_tensors(
+            super_test_df_with_index, name_smiles_embedding_df, device, start_idx=1, stop_idx=-3)
+        
+        print(f"Super test tensor shapes: x_super_test: {x_super_test.shape}, y_super_test: {y_super_test.shape}")
+        
+        # Generate embeddings for super test set
+        with torch.no_grad():
+            super_test_embeddings = encoder_current(x_super_test).cpu().numpy()
+        
+        print(f"Generated super test embeddings shape: {super_test_embeddings.shape}")
+        
+        # Create super test ChemNet dataset with embeddings
+        super_test_chemnet_df = pd.DataFrame(super_test_embeddings, columns=[f'emb_{j}' for j in range(output_size)])
+        super_test_chemnet_df['SMILES_spectra'] = super_test_df['SMILES_spectra'].values
+        super_test_chemnet_df['Response'] = super_test_df['Response'].values
+        super_test_chemnet_df['log_response'] = super_test_df['log_response'].values
+        super_test_chemnet_df['index_id'] = super_test_df['index_id'].values
+        
+        # Save super test set embeddings
+        super_test_save_name = f"super_test_chemnet_emb_{dataset_name}"
+        super_test_save_path = os.path.join(super_test_folder, f"{super_test_save_name}.pkl")
+        super_test_chemnet_df.to_pickle(super_test_save_path)
+        print(f"Saved super test set embeddings to: {super_test_save_path}")
+        print(f"Super test set embeddings shape: {super_test_chemnet_df.shape}")
+    else:
+        print(f"\n=== NO SUPER TEST SET SMILES FOUND IN DATASET ===")
     
     # Display results summary
     print(f"\n=== ENCODER TRAINING COMPLETED ===")
@@ -199,12 +269,15 @@ try:
     print(f"Train Samples: {len(train_data_current)}")
     print(f"Test Samples: {len(test_data_current)}")
     print(f"Total Samples: {len(full_chemnet_df)}")
+    print(f"Super Test Samples: {len(super_test_df) if len(super_test_df) > 0 else 0}")
     print(f"Embedding Dimension: {output_size}")
     print(f"Original Features: {x_train_enc.shape[1]}")
     print(f"Bin Size: {bin_size}")
     print(f"Threshold: {threshold}")
     
     print(f"\nSuccessfully created and saved ChemNet embedding dataset!")
+    if len(super_test_df) > 0:
+        print(f"Successfully created and saved super test set embeddings!")
     
 except Exception as e:
     print(f"Error processing {dataset_name}: {str(e)}")
