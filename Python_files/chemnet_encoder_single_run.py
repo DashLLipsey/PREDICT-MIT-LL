@@ -57,12 +57,12 @@ print(f"Processing single dataset: {dataset_name}")
 grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes"
 
 # Training parameters
-batch_size = 512
+batch_size = 256
 epochs = 500
 lr = 0.0001  
 criterion = nn.MSELoss()
 output_size = 512
-num_layers = 4
+num_layers = 6
 
 try:
     # Create adaptive config for this dataset
