@@ -56,7 +56,7 @@ cond_encoder_results = []
 output_size = 513
 num_layers = 4
 batch_size = 512
-epochs=1000
+epochs=250
 lr = 0.0003
 lambda1 = 1
 lambda2 = 5
@@ -175,7 +175,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         # Create wandb config for this dataset
         chemnet_tox_config = {
             'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
-            'wandb_project': 'MIT-Lincoln-Lab-Conditional-Encoder',
+            'wandb_project': 'MIT-Lincoln-Lab',
             'wandb_name': f"cond_enc_{dataset_name}",
             'gpu': True,
             'encoder_type': "Conditional Encoder ChemNet + Toxicity",

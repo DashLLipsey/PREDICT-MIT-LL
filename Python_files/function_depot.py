@@ -716,15 +716,16 @@ def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, 
         val_toxicity_losses.append(average_val_toxicity_loss)
         val_morgan_losses.append(average_val_morgan_loss)
 
-        print(f'Epoch [{epoch+1}/{epochs}]')
-        print(f'   Training loss: {average_train_loss:.6f}')
-        print(f'   Training embedding loss: {average_train_embedding_loss:.6f}')
-        print(f'   Training toxicity loss: {average_train_toxicity_loss:.6f}')
-        print(f'   Training morgan loss: {average_train_morgan_loss:.6f}')
-        print(f'   Validation loss: {average_val_loss:.6f}')
-        print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
-        print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
-        print(f'   Validation morgan loss: {average_val_morgan_loss:.6f}')
+        if epoch % 10 == 0 or epoch == epochs - 1:
+            print(f'Epoch [{epoch+1}/{epochs}]')        
+            print(f'   Training loss: {average_train_loss:.6f}')
+            print(f'   Training embedding loss: {average_train_embedding_loss:.6f}')
+            print(f'   Training toxicity loss: {average_train_toxicity_loss:.6f}')
+            print(f'   Training morgan loss: {average_train_morgan_loss:.6f}')
+            print(f'   Validation loss: {average_val_loss:.6f}')
+            print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
+            print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
+            print(f'   Validation morgan loss: {average_val_morgan_loss:.6f}')
     wandb.finish()
     return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses
 
@@ -882,15 +883,16 @@ def train_model_condenc_full(model, train_data, val_data, epochs, learning_rate,
         val_toxicity_losses.append(average_val_toxicity_loss)
         val_morgan_losses.append(average_val_morgan_loss)
 
-        print(f'Epoch [{epoch+1}/{epochs}]')
-        print(f'   Training loss: {average_train_loss:.6f}')
-        print(f'   Training embedding loss: {average_train_embedding_loss:.6f}')
-        print(f'   Training toxicity loss: {average_train_toxicity_loss:.6f}')
-        print(f'   Training morgan loss: {average_train_morgan_loss:.6f}')
-        print(f'   Validation loss: {average_val_loss:.6f}')
-        print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
-        print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
-        print(f'   Validation morgan loss: {average_val_morgan_loss:.6f}')
+        if epoch % 10 == 0 or epoch == epochs - 1:
+            print(f'Epoch [{epoch+1}/{epochs}]')
+            print(f'   Training loss: {average_train_loss:.6f}')
+            print(f'   Training embedding loss: {average_train_embedding_loss:.6f}')
+            print(f'   Training toxicity loss: {average_train_toxicity_loss:.6f}')
+            print(f'   Training morgan loss: {average_train_morgan_loss:.6f}')
+            print(f'   Validation loss: {average_val_loss:.6f}')
+            print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
+            print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
+            print(f'   Validation morgan loss: {average_val_morgan_loss:.6f}')
     wandb.finish()
     return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses
 
@@ -1048,16 +1050,16 @@ def train_model_condenc_full(model, train_data, val_data, epochs, learning_rate,
         val_embedding_losses.append(average_val_embedding_loss)
         val_toxicity_losses.append(average_val_toxicity_loss)
         val_morgan_losses.append(average_val_morgan_loss)
-
-        print(f'Epoch [{epoch+1}/{epochs}]')
-        print(f'   Training loss: {average_train_loss:.6f}')
-        print(f'   Training embedding loss: {average_train_embedding_loss:.6f}')
-        print(f'   Training toxicity loss: {average_train_toxicity_loss:.6f}')
-        print(f'   Training morgan loss: {average_train_morgan_loss:.6f}')
-        print(f'   Validation loss: {average_val_loss:.6f}')
-        print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
-        print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
-        print(f'   Validation morgan loss: {average_val_morgan_loss:.6f}')
+        if epoch % 10 == 0 or epoch == epochs - 1:
+            print(f'Epoch [{epoch+1}/{epochs}]')
+            print(f'   Training loss: {average_train_loss:.6f}')
+            print(f'   Training embedding loss: {average_train_embedding_loss:.6f}')
+            print(f'   Training toxicity loss: {average_train_toxicity_loss:.6f}')
+            print(f'   Training morgan loss: {average_train_morgan_loss:.6f}')
+            print(f'   Validation loss: {average_val_loss:.6f}')
+            print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
+            print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
+            print(f'   Validation morgan loss: {average_val_morgan_loss:.6f}')
     wandb.finish()
     return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses
 #%%
@@ -1632,11 +1634,11 @@ def create_dataset_tensors_condenc_full(spectra_dataset, embedding_df, morgan_df
     spectra = spectra_dataset.iloc[:, start_idx:stop_idx]
     
     # One-hot encode the Group column
-    group_encoded = pd.get_dummies(spectra_dataset['Group'], prefix='group')
-    
+    group_encoded = pd.get_dummies(spectra_dataset['Group'], prefix='group', dtype=int)
+
     # Concatenate spectra with group encoding
     spectra_with_group = pd.concat([spectra, group_encoded], axis=1)
-    
+
     # Create chemical labels list
     chem_labels = list(spectra_dataset['SMILES_spectra'])
     

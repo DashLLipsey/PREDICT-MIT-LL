@@ -116,9 +116,6 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         print(f"Loaded {dataset_name} - Shape: {current_dataset.shape}")
         print(f"Config - Bin: {bin_size}, Threshold: {threshold}")
         
-        print(f"Loaded {dataset_name} - Shape: {current_dataset.shape}")
-        print(f"Config - Bin: {bin_size}, Threshold: {threshold}")
-
         # Fix data types - be more selective about which columns to convert
         exclude_cols = ['SMILES_spectra', 'index_id', 'Group', 'Response', 'log_response']
         numeric_cols = [col for col in current_dataset.columns if col not in exclude_cols]
