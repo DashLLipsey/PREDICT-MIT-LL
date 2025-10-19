@@ -27,6 +27,20 @@ sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
 import functions_enc as f
 import function_depot as fd
 
+# ====== SUPER TEST SET SMILES (COMMENT OUT TO INCLUDE IN TRAINING) ======
+super_test_smiles = [
+    'NC(=S)Nc1ccccc1',                                  # 6
+    'COc1ccc2c(c1)c(CC(=O)O)c(C)n2C(=O)c1ccc(Cl)cc1',   # 12
+    'CCNc1nc(Cl)nc(NC(C)(C)C#N)n1',                     # 6 
+    'C#CCN(C)Cc1ccccc1',                                # 6
+    'COP(=S)(OC)Oc1ccc(SC)c(C)c1',                      # 6
+    'Nc1cccc2c(N)cccc12',                               # 6
+    'Cn1c(=O)c2c(ncn2CCO)n(C)c1=O',                     # 40
+    'CNC(=O)N(C)c1nnc(C(C)(C)C)s1',                     # 6
+    'Nc1ccc(Sc2ccc(N)cc2)cc1',                          # 15
+    'COc1ccc2ccc(=O)oc2c1CC=C(C)C',                     # 6
+]
+
 # ====== SPECIFY BIN SIZE AND THRESHOLD ======
 bin_size = 100   # Change this to your desired bin size (e.g., 0.05, 0.1, 0.5, 1, 2, 5, 10, 25, 50, 100, 200, 500, 1000)
 threshold = 1    # Change this to your desired threshold (e.g., 0, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 50, 100)
@@ -86,7 +100,9 @@ df5_spectra = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df5_spec
 # Define folders
 grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes"
 output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_full_outputs"
+super_test_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/super_test_sets"
 os.makedirs(output_folder, exist_ok=True)
+os.makedirs(super_test_folder, exist_ok=True)
 
 # Create the dataset name
 dataset_name = create_dataset_name(bin_size, threshold)
@@ -110,6 +126,19 @@ try:
         dataset = pd.DataFrame(dataset)
 
     print(f"Loaded {dataset_name} - Shape: {dataset.shape}")
+    
+    # ====== REMOVE SUPER TEST SET FROM TRAINING DATA ======
+    # Save super test set before removing
+    super_test_df = dataset[dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
+    print(f"Super test set size: {len(super_test_df)} samples")
+    print(f"Super test SMILES found: {super_test_df['SMILES_spectra'].nunique()} unique SMILES")
+    
+    # Remove super test set from training data
+    original_count = len(dataset)
+    dataset = dataset[~dataset['SMILES_spectra'].isin(super_test_smiles)]
+    removed_count = original_count - len(dataset)
+    print(f"Removed {removed_count} samples from super test set")
+    print(f"Dataset shape after removal: {dataset.shape}")
     
     # Add Group column if not present
     if 'Group' not in dataset.columns:
@@ -197,6 +226,7 @@ try:
         # Dataset-specific parameters
         'Bin': parsed_bin_size,
         'Threshold': parsed_threshold,
+        'Super_test': True,
     }
     
     print(f"Starting training for {epochs} epochs with learning rate {lr}...")
@@ -294,6 +324,57 @@ try:
     predictions_path = os.path.join(output_folder, predictions_filename)
     output_df.to_pickle(predictions_path)
 
+    # ====== GENERATE SUPER TEST SET CONDITIONAL ENCODER OUTPUTS ======
+    if len(super_test_df) > 0:
+        print(f"\n=== GENERATING SUPER TEST SET CONDITIONAL ENCODER OUTPUTS ===")
+        
+        # Add Group column to super test set if not present
+        if 'Group' not in super_test_df.columns:
+            super_test_df = super_test_df.copy()
+            super_test_df['Group'] = super_test_df['index_id'].map(id_to_group).fillna('Unknown')
+        
+        # Add index column to super_test_df (required by create_dataset_tensors_condenc_full)
+        super_test_df_with_index = super_test_df.reset_index(drop=True).copy()
+        super_test_df_with_index['index'] = super_test_df_with_index.index
+        
+        # Process super test set to add response and log_response
+        super_test_df_processed = fd.add_response_and_log_response(super_test_df_with_index.copy(), df5_subset, smiles_col='SMILES_spectra')
+        
+        # Create super test tensors
+        x_super_test_with_group, y_super_test_emb, y_super_test_tox, y_super_test_morgan, super_test_indices_tensor = fd.create_dataset_tensors_condenc_full(
+            super_test_df_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
+        
+        print(f"Super test tensor shapes: x_super_test: {x_super_test_with_group.shape}")
+        
+        # Generate conditional encoder outputs for super test set
+        with torch.no_grad():
+            super_test_cond_outputs = cond_encoder_current(x_super_test_with_group).cpu().numpy()
+        
+        print(f"Generated super test conditional encoder outputs shape: {super_test_cond_outputs.shape}")
+        
+        # Create super test conditional encoder dataset with outputs
+        super_test_output_df = pd.DataFrame(super_test_cond_outputs[:, :512], columns=emb_cols)
+        super_test_output_df['cond_tox_pred'] = super_test_cond_outputs[:, 512]  # Toxicity prediction
+        
+        # Add Morgan fingerprint predictions
+        super_test_morgan_pred_df = pd.DataFrame(super_test_cond_outputs[:, 513:], columns=morgan_cols)
+        super_test_output_df = pd.concat([super_test_output_df, super_test_morgan_pred_df], axis=1)
+        
+        # Add metadata
+        super_test_output_df['SMILES_spectra'] = super_test_df_processed['SMILES_spectra'].values
+        super_test_output_df['Response'] = super_test_df_processed['Response'].values
+        super_test_output_df['log_response'] = super_test_df_processed['log_response'].values
+        super_test_output_df['index_id'] = super_test_df_processed['index'].values
+        
+        # Save super test set conditional encoder outputs
+        super_test_save_name = f"super_test_cond_enc_full_{bin_part}_{threshold_part}_df_spectra"
+        super_test_save_path = os.path.join(super_test_folder, f"{super_test_save_name}.pkl")
+        super_test_output_df.to_pickle(super_test_save_path)
+        print(f"Saved super test set conditional encoder outputs to: {super_test_save_path}")
+        print(f"Super test set outputs shape: {super_test_output_df.shape}")
+    else:
+        print(f"\n=== NO SUPER TEST SET SMILES FOUND IN DATASET ===")
+
     print(f"\n=== CONDITIONAL ENCODER TRAINING COMPLETED ===")
     print(f"Dataset: {dataset_name}")
     print(f"Bin Size: {bin_size}")
@@ -301,6 +382,7 @@ try:
     print(f"Train Samples: {len(train_data_processed)}")
     print(f"Test Samples: {len(test_data_processed)}")
     print(f"Total Samples: {len(full_data_processed)}")
+    print(f"Super Test Samples: {len(super_test_df) if len(super_test_df) > 0 else 0}")
     print(f"Input Features: {actual_input_size}")
     print(f"Output Dimensions: {output_size}")
     print(f"Final Output Shape: {output_df.shape}")
@@ -313,7 +395,12 @@ try:
     
     print(f"\nSaved prediction dataframe to: {predictions_filename}")
     print(f"Full path: {predictions_path}")
-    print(f"\nSuccessfully created and saved conditional encoder outputs!")
+    
+    if len(super_test_df) > 0:
+        print(f"\nSuccessfully created and saved conditional encoder outputs!")
+        print(f"Successfully created and saved super test set conditional encoder outputs!")
+    else:
+        print(f"\nSuccessfully created and saved conditional encoder outputs!")
     
 except Exception as e:
     print(f"Error processing {dataset_name}: {str(e)}")
@@ -328,4 +415,6 @@ finally:
         del train_indices_tensor, val_indices_tensor
     if 'cond_encoder_current' in locals():
         del cond_encoder_current, trained_cond_encoder
+    if 'x_super_test_with_group' in locals():
+        del x_super_test_with_group, y_super_test_emb, y_super_test_tox, y_super_test_morgan, super_test_indices_tensor
     torch.cuda.empty_cache()
