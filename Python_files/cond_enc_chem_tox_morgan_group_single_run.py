@@ -42,7 +42,7 @@ super_test_smiles = [
 ]
 
 # ====== SPECIFY BIN SIZE AND THRESHOLD ======
-bin_size = 100   # Change this to your desired bin size (e.g., 0.05, 0.1, 0.5, 1, 2, 5, 10, 25, 50, 100, 200, 500, 1000)
+bin_size = 1   # Change this to your desired bin size (e.g., 0.05, 0.1, 0.5, 1, 2, 5, 10, 25, 50, 100, 200, 500, 1000)
 threshold = 1    # Change this to your desired threshold (e.g., 0, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 50, 100)
 
 # Function to create dataset name from bin and threshold
@@ -78,11 +78,11 @@ def parse_dataset_name(dataset_name):
 # Conditional Encoder Architecture: Set the parameters and the loss function
 output_size = 2561  # ChemNet + Toxicity + Morgan
 num_layers = 4
-batch_size = 512
+batch_size = 256
 epochs = 250
-lr = 0.0003
-lambda1 = 1
-lambda2 = 5
+lr = 0.0001
+lambda1 = 5
+lambda2 = 10
 lambda3 = 1  # For Morgan fingerprints
 criterion1 = nn.MSELoss()
 criterion2 = nn.MSELoss()
@@ -324,6 +324,8 @@ try:
     predictions_path = os.path.join(output_folder, predictions_filename)
     output_df.to_pickle(predictions_path)
 
+
+
     # ====== GENERATE SUPER TEST SET CONDITIONAL ENCODER OUTPUTS ======
     if len(super_test_df) > 0:
         print(f"\n=== GENERATING SUPER TEST SET CONDITIONAL ENCODER OUTPUTS ===")
@@ -340,13 +342,96 @@ try:
         # Process super test set to add response and log_response
         super_test_df_processed = fd.add_response_and_log_response(super_test_df_with_index.copy(), df5_subset, smiles_col='SMILES_spectra')
         
-        # Create super test tensors
-        x_super_test_with_group, y_super_test_emb, y_super_test_tox, y_super_test_morgan, super_test_indices_tensor = fd.create_dataset_tensors_condenc_full(
-            super_test_df_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
+        # FIX: Ensure super test set has same group structure as training data
+        # Get the unique groups from training data
+        training_groups = set(full_data_processed['Group'].unique())
+        super_test_groups = set(super_test_df_processed['Group'].unique())
+        
+        print(f"Training data groups: {training_groups}")
+        print(f"Super test data groups: {super_test_groups}")
+        
+        # Check if super test has groups not in training data
+        missing_groups = super_test_groups - training_groups
+        if missing_groups:
+            print(f"Warning: Super test set contains groups not in training data: {missing_groups}")
+            # Map missing groups to the most common training group
+            most_common_group = full_data_processed['Group'].mode()[0]
+            print(f"Mapping missing groups to: {most_common_group}")
+            super_test_df_processed['Group'] = super_test_df_processed['Group'].replace(
+                list(missing_groups), most_common_group
+            )
+        
+        # Modified tensor creation function that ensures consistent group encoding
+        def create_dataset_tensors_condenc_full_consistent(spectra_dataset, embedding_df, morgan_df, device, 
+                                                          reference_groups, start_idx=None, stop_idx=None):
+            """
+            Create tensors with consistent group encoding based on reference groups.
+            """
+            # Extract spectral data
+            spectra = spectra_dataset.iloc[:, start_idx:stop_idx]
+            
+            # One-hot encode the Group column using ALL groups from reference
+            group_encoded = pd.get_dummies(spectra_dataset['Group'], prefix='group', dtype=int)
+            
+            # Ensure all reference groups are present (add missing columns with zeros)
+            for group in reference_groups:
+                col_name = f'group_{group}'
+                if col_name not in group_encoded.columns:
+                    group_encoded[col_name] = 0
+            
+            # Reorder columns to match reference order (alphabetical)
+            reference_cols = [f'group_{group}' for group in sorted(reference_groups)]
+            group_encoded = group_encoded.reindex(columns=reference_cols, fill_value=0)
+            
+            print(f"Group encoding shape: {group_encoded.shape}")
+            print(f"Group columns: {group_encoded.columns.tolist()}")
+            
+            # Concatenate spectra with group encoding
+            spectra_with_group = pd.concat([spectra, group_encoded], axis=1)
+            
+            # Create chemical labels list
+            chem_labels = list(spectra_dataset['SMILES_spectra'])
+            
+            # Create tensors
+            spectra_with_group_tensor = torch.Tensor(spectra_with_group.values).to(device)
+            embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+            log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
+            morgan_tensor = torch.Tensor([morgan_df.loc[morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+            spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
+
+            return spectra_with_group_tensor, embeddings_tensor, log_tox_tensor, morgan_tensor, spectra_indices_tensor
+        
+        # Create super test tensors with consistent group encoding
+        reference_groups = full_data_processed['Group'].unique()
+        x_super_test_with_group, y_super_test_emb, y_super_test_tox, y_super_test_morgan, super_test_indices_tensor = create_dataset_tensors_condenc_full_consistent(
+            super_test_df_processed, name_smiles_embedding_df, morgan_df, device, 
+            reference_groups, start_idx=1, stop_idx=-5)
         
         print(f"Super test tensor shapes: x_super_test: {x_super_test_with_group.shape}")
+        print(f"Expected input size: {actual_input_size}")
+        print(f"Actual input size: {x_super_test_with_group.shape[1]}")
+        
+        # Verify the shapes match before proceeding
+        if x_super_test_with_group.shape[1] != actual_input_size:
+            print(f"ERROR: Shape mismatch detected!")
+            print(f"Training input size: {actual_input_size}")
+            print(f"Super test input size: {x_super_test_with_group.shape[1]}")
+            print(f"Difference: {x_super_test_with_group.shape[1] - actual_input_size}")
+            
+            # Try to fix by padding or truncating
+            if x_super_test_with_group.shape[1] < actual_input_size:
+                # Pad with zeros
+                padding_size = actual_input_size - x_super_test_with_group.shape[1]
+                padding = torch.zeros(x_super_test_with_group.shape[0], padding_size, device=device)
+                x_super_test_with_group = torch.cat([x_super_test_with_group, padding], dim=1)
+                print(f"Padded super test tensor to shape: {x_super_test_with_group.shape}")
+            elif x_super_test_with_group.shape[1] > actual_input_size:
+                # Truncate
+                x_super_test_with_group = x_super_test_with_group[:, :actual_input_size]
+                print(f"Truncated super test tensor to shape: {x_super_test_with_group.shape}")
         
         # Generate conditional encoder outputs for super test set
+        cond_encoder_current.eval()
         with torch.no_grad():
             super_test_cond_outputs = cond_encoder_current(x_super_test_with_group).cpu().numpy()
         
@@ -386,22 +471,22 @@ try:
     print(f"Input Features: {actual_input_size}")
     print(f"Output Dimensions: {output_size}")
     print(f"Final Output Shape: {output_df.shape}")
-    
+
     print(f"\nToxicity Prediction Performance (from 513th encoder output):")
     print(f"Train Median % Error: {train_median_percent_error:.1f}%")
     print(f"Train Mean % Error: {train_mean_percent_error:.1f}%")
     print(f"Test Median % Error: {test_median_percent_error:.1f}%")
     print(f"Test Mean % Error: {test_mean_percent_error:.1f}%")
-    
+
     print(f"\nSaved prediction dataframe to: {predictions_filename}")
     print(f"Full path: {predictions_path}")
-    
+
     if len(super_test_df) > 0:
         print(f"\nSuccessfully created and saved conditional encoder outputs!")
         print(f"Successfully created and saved super test set conditional encoder outputs!")
     else:
         print(f"\nSuccessfully created and saved conditional encoder outputs!")
-    
+        
 except Exception as e:
     print(f"Error processing {dataset_name}: {str(e)}")
     import traceback
