@@ -54,7 +54,7 @@ super_test_smiles = [
 
 # ====== SPECIFY BIN SIZE AND THRESHOLD ======
 bin_size = 1   # Also try 0.1, 1, 200
-threshold = 100  # Also try 0.1, 50, 100
+threshold = 1  # Also try 0.1, 50, 100
 
 # Function to create dataset name from bin and threshold
 def create_dataset_name(bin_size, threshold):
@@ -123,8 +123,6 @@ try:
     removed_count = original_count - len(current_dataset)
     print(f"Removed {removed_count} samples from super test set")
     print(f"Dataset shape after removal: {current_dataset.shape}")
-    
-    print(f"Config - Bin: {bin_size}, Threshold: {threshold}")
 
     # Fix data types - be more selective about which columns to convert
     exclude_cols = ['SMILES_spectra', 'index_id', 'Group', 'Response', 'log_response']
@@ -161,11 +159,14 @@ try:
     
     # Create tensors
     y_train_enc, x_train_enc, train_indices_tensor = fd.create_dataset_tensors(
-        train_data_current, name_smiles_embedding_df, device, start_idx=1, stop_idx=-3)
+        train_data_current, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
     
     y_val_enc, x_val_enc, val_indices_tensor = fd.create_dataset_tensors(
-        test_data_current, name_smiles_embedding_df, device, start_idx=1, stop_idx=-3)
+        test_data_current, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
     
+    # print(x_train_enc)
+    # sys.exit() # Here, split this into two python files ()
+
     print(f"Training tensor shapes: x_train: {x_train_enc.shape}, y_train: {y_train_enc.shape}")
     
     # Update config with actual feature count
@@ -236,7 +237,7 @@ try:
         
         # Create super test tensors
         y_super_test, x_super_test, super_test_indices_tensor = fd.create_dataset_tensors(
-            super_test_df_with_index, name_smiles_embedding_df, device, start_idx=1, stop_idx=-3)
+            super_test_df_with_index, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
         
         print(f"Super test tensor shapes: x_super_test: {x_super_test.shape}, y_super_test: {y_super_test.shape}")
         

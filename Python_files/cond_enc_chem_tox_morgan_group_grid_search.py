@@ -54,12 +54,12 @@ cond_encoder_results = []
 
 # Conditional Encoder Architecture: Set the parameters and the loss function from the classes defined above.
 output_size = 2561  # Changed from 513 to 2561 for ChemNet + Toxicity + Morgan
-num_layers = 4
+num_layers = 6
 batch_size = 512
-epochs=250
+epochs= 500
 lr = 0.0003
-lambda1 = 1
-lambda2 = 5
+lambda1 = 3
+lambda2 = 6
 lambda3 = 1  # Added lambda3 for Morgan fingerprints
 # criterion=nn.MSELoss() # Still use MSELoss for the embedding criterion
 criterion1 = nn.MSELoss()

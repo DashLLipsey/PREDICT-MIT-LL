@@ -106,7 +106,6 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             # Dataset-specific parameters
             'Bin': bin_size,
             'Threshold': threshold,
-            'Original_Features': None,  # Will be updated after loading data
         }
         
         # Load dataset from pickle file
@@ -163,11 +162,13 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         
         # Create tensors
         y_train_enc, x_train_enc, train_indices_tensor = fd.create_dataset_tensors(
-            train_data_current, name_smiles_embedding_df, device, start_idx=1, stop_idx=-3)
+            train_data_current, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
         
         y_val_enc, x_val_enc, val_indices_tensor = fd.create_dataset_tensors(
-            test_data_current, name_smiles_embedding_df, device, start_idx=1, stop_idx=-3)
+            test_data_current, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
         
+        # print(x_train_enc)
+        # sys.exit()
         print(f"Training tensor shapes: x_train: {x_train_enc.shape}, y_train: {y_train_enc.shape}")
         
         # Update config with actual feature count
@@ -190,7 +191,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             learning_rate=lr,
             criterion=criterion,
             device=device,
-            config=chemnet_config  # Pass the adaptive config
+            config=chemnet_config  
         )
         
         # Generate embeddings
