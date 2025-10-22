@@ -36,7 +36,7 @@ name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_
 
 # Get all dataset files from the grid search folder
 grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes"
-dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.pkl') and 'df_spectra' in f]
+dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
 # Filter out datasets with bin size 0.01 and 0.05
 filtered_dataset_files = []
@@ -48,7 +48,7 @@ for f in dataset_files:
         if 'bin0_01' in f:
             print(f"Skipping bin size 0.01 dataset: {f}")
 
-dataset_names = [f.replace('.pkl', '') for f in filtered_dataset_files]
+dataset_names = [f.replace('.parquet', '') for f in filtered_dataset_files]
 
 print(f"Found {len(dataset_files)} total datasets")
 # Function to extract bin size and threshold from dataset name
@@ -107,11 +107,11 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             'Bin': bin_size,
             'Threshold': threshold,
         }
-        
-        # Load dataset from pickle file
-        dataset_path = os.path.join(grid_search_folder, f"{dataset_name}.pkl")
-        current_dataset = pd.read_pickle(dataset_path)
-        
+
+        # Load dataset from parquet file
+        dataset_path = os.path.join(grid_search_folder, f"{dataset_name}.parquet")
+        current_dataset = pd.read_parquet(dataset_path)
+
         print(f"Loaded {dataset_name} - Shape: {current_dataset.shape}")
         print(f"Config - Bin: {bin_size}, Threshold: {threshold}")
         
@@ -222,8 +222,8 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         
         # Save to chemnet folder
         chemnet_dataset_name = f"chemnet_emb_{dataset_name}"
-        save_path = os.path.join(chemnet_folder, f"{chemnet_dataset_name}.pkl")
-        full_chemnet_df.to_pickle(save_path)
+        save_path = os.path.join(chemnet_folder, f"{chemnet_dataset_name}.parquet")
+        full_chemnet_df.to_parquet(save_path)
         print(f"Saved to: {save_path}")
         
         # Store results with config

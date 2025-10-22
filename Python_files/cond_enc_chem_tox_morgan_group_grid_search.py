@@ -55,8 +55,8 @@ cond_encoder_results = []
 # Conditional Encoder Architecture: Set the parameters and the loss function from the classes defined above.
 output_size = 2561  # Changed from 513 to 2561 for ChemNet + Toxicity + Morgan
 num_layers = 6
-batch_size = 512
-epochs= 500
+batch_size = 256
+epochs= 300
 lr = 0.0003
 lambda1 = 3
 lambda2 = 6
@@ -86,16 +86,16 @@ df5_spectra = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df5_spec
 grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes"
 
 # Get all dataset files from the grid search folder
-dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.pkl') and 'df_spectra' in f]
+dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
 # Define allowed bin sizes
-allowed_bin_prefixes = ['bin0_05_', 'bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_', 
-                        'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_' 'bin1000_']
+allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_', #'bin0_05_', 
+                        'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_', 'bin1000_']
 
 # Filter dataset files to only include allowed bin sizes
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
 
-dataset_names = [f.replace('.pkl', '') for f in dataset_files]
+dataset_names = [f.replace('.parquet', '') for f in dataset_files]
 
 print(f"Found {len(dataset_names)} datasets to process (excluding bin size 0.01)")
 
@@ -112,9 +112,9 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
     print(f"\nProcessing {i}/{len(dataset_names)}: {dataset_name}")
     
     try:
-        # Load dataset from pickle file
-        dataset_path = os.path.join(grid_search_folder, f"{dataset_name}.pkl")
-        dataset = pd.read_pickle(dataset_path)
+        # Load dataset from parquet file
+        dataset_path = os.path.join(grid_search_folder, f"{dataset_name}.parquet")
+        dataset = pd.read_parquet(dataset_path)
 
         # Convert to DataFrame if it's not already one
         if not isinstance(dataset, pd.DataFrame):
@@ -312,9 +312,9 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_full_outputs"
         os.makedirs(output_folder, exist_ok=True)
 
-        predictions_filename = f"cond_enc_full_{bin_part}_{threshold_part}_df_spectra.pkl"
+        predictions_filename = f"cond_enc_full_{bin_part}_{threshold_part}_df_spectra.parquet"
         predictions_path = os.path.join(output_folder, predictions_filename)
-        output_df.to_pickle(predictions_path)
+        output_df.to_parquet(predictions_path)
 
         print(f"Toxicity Prediction Performance (from 513th encoder output):")
         print(f"Test Median % Error: {test_median_percent_error:.1f}%")

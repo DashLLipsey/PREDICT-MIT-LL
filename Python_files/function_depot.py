@@ -1421,7 +1421,7 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory,
     - df_original: Original DataFrame with response data (e.g., df4_QQpos)
     - bin_sizes: List of bin sizes to use
     - thresholds: List of threshold values to use
-    - save_directory: Directory path to save the pickle files
+    - save_directory: Directory path to save the parquet files
     
     Returns:
     - Dictionary with all created datasets keyed by variable names
@@ -1468,8 +1468,8 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory,
                 created_datasets[var_name] = final_data
                 
                 # Save to file
-                save_path = f"{save_directory}/{var_name}.pkl"
-                final_data.to_pickle(save_path)
+                save_path = f"{save_directory}/{var_name}.parquet"
+                final_data.to_parquet(save_path)
                 print(f"Saved {var_name} to {save_path} - Shape: {final_data.shape}")
 
     print(f"  - {len(bin_sizes)} bin sizes: {bin_sizes}")
@@ -1509,8 +1509,8 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory,
             created_datasets[var_name] = final_data
             
             # Save to file
-            save_path = f"{save_directory}/{var_name}.pkl"
-            final_data.to_pickle(save_path)
+            save_path = f"{save_directory}/{var_name}.parquet"
+            final_data.to_parquet(save_path)
             print(f"Saved {var_name} to {save_path}")
 
     print(f"Created {len(bin_sizes)} thresh0 datasets!")

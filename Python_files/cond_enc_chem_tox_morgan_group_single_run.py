@@ -114,12 +114,12 @@ id_to_group = dict(zip(df5_spectra['index_id'], df5_spectra['Group']))
 print(f"Group mapping created with {len(id_to_group)} entries")
 
 try:
-    # Load dataset from pickle file
-    dataset_path = os.path.join(grid_search_folder, f"{dataset_name}.pkl")
+    # Load dataset from parquet file
+    dataset_path = os.path.join(grid_search_folder, f"{dataset_name}.parquet")
     if not os.path.exists(dataset_path):
         raise FileNotFoundError(f"Dataset not found: {dataset_path}")
         
-    dataset = pd.read_pickle(dataset_path)
+    dataset = pd.read_parquet(dataset_path)
 
     # Convert to DataFrame if it's not already one
     if not isinstance(dataset, pd.DataFrame):
@@ -188,6 +188,9 @@ try:
 
     x_val_with_group, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor = fd.create_dataset_tensors_condenc_full(
         test_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
+
+    # print(x_train_with_group)
+    # sys.exit() # Here, split this into two python files ()
 
     # Get the actual input size and create model accordingly
     actual_input_size = x_train_with_group.shape[1]
@@ -320,9 +323,9 @@ try:
         threshold_part = f"thresh{thresh_part}"  # Keep thresh format
     
     # Save conditional encoder outputs (2561 dimensions + 4 metadata = 2565 columns total)
-    predictions_filename = f"cond_enc_full_{bin_part}_{threshold_part}_df_spectra.pkl"
+    predictions_filename = f"cond_enc_full_{bin_part}_{threshold_part}_df_spectra.parquet"
     predictions_path = os.path.join(output_folder, predictions_filename)
-    output_df.to_pickle(predictions_path)
+    output_df.to_parquet(predictions_path)
 
 
 
@@ -453,8 +456,8 @@ try:
         
         # Save super test set conditional encoder outputs
         super_test_save_name = f"super_test_cond_enc_full_{bin_part}_{threshold_part}_df_spectra"
-        super_test_save_path = os.path.join(super_test_folder, f"{super_test_save_name}.pkl")
-        super_test_output_df.to_pickle(super_test_save_path)
+        super_test_save_path = os.path.join(super_test_folder, f"{super_test_save_name}.parquet")
+        super_test_output_df.to_parquet(super_test_save_path)
         print(f"Saved super test set conditional encoder outputs to: {super_test_save_path}")
         print(f"Super test set outputs shape: {super_test_output_df.shape}")
     else:

@@ -53,7 +53,7 @@ super_test_smiles = [
 ]
 
 # ====== SPECIFY BIN SIZE AND THRESHOLD ======
-bin_size = 1   # Also try 0.1, 1, 200
+bin_size = 0.05   # Also try 0.1, 1, 200
 threshold = 1  # Also try 0.1, 50, 100
 
 # Function to create dataset name from bin and threshold
@@ -101,14 +101,13 @@ try:
         'Threshold': threshold,
         'Super_test': True,
     }
-    
-    # Load dataset from pickle file
-    dataset_path = os.path.join(grid_search_folder, f"{dataset_name}.pkl")
+
+    # Load dataset from parquet file
+    dataset_path = os.path.join(grid_search_folder, f"{dataset_name}.parquet")
     if not os.path.exists(dataset_path):
         raise FileNotFoundError(f"Dataset not found: {dataset_path}")
         
-    current_dataset = pd.read_pickle(dataset_path)
-    
+    current_dataset = pd.read_parquet(dataset_path)
     print(f"Loaded {dataset_name} - Shape: {current_dataset.shape}")
     
     # ====== REMOVE SUPER TEST SET FROM TRAINING DATA ======
@@ -222,8 +221,8 @@ try:
     
     # Save to chemnet folder (overwriting existing file)
     chemnet_dataset_name = f"chemnet_emb_{dataset_name}"
-    save_path = os.path.join(chemnet_folder, f"{chemnet_dataset_name}.pkl")
-    full_chemnet_df.to_pickle(save_path)
+    save_path = os.path.join(chemnet_folder, f"{chemnet_dataset_name}.parquet")
+    full_chemnet_df.to_parquet(save_path)
     print(f"Saved to: {save_path}")
 
 
@@ -256,8 +255,8 @@ try:
         
         # Save super test set embeddings
         super_test_save_name = f"super_test_chemnet_emb_{dataset_name}"
-        super_test_save_path = os.path.join(super_test_folder, f"{super_test_save_name}.pkl")
-        super_test_chemnet_df.to_pickle(super_test_save_path)
+        super_test_save_path = os.path.join(super_test_folder, f"{super_test_save_name}.parquet")
+        super_test_chemnet_df.to_parquet(super_test_save_path)
         print(f"Saved super test set embeddings to: {super_test_save_path}")
         print(f"Super test set embeddings shape: {super_test_chemnet_df.shape}")
     else:
