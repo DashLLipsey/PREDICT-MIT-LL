@@ -412,7 +412,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             with torch.no_grad():
                 super_test_predictions = cond_encoder_current(x_super_test_with_group).cpu().numpy()
                 super_test_tox_predictions = super_test_predictions[:, 512]  # Element 512 for toxicity
-                
+
             # Calculate super test set percent errors
             super_test_tox_true = y_super_test_tox.cpu().numpy().flatten()
             super_test_tox_pred = super_test_tox_predictions.flatten()
