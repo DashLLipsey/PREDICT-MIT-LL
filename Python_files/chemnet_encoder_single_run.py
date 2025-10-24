@@ -53,8 +53,8 @@ super_test_smiles = [
 ]
 
 # ====== SPECIFY BIN SIZE AND THRESHOLD ======
-bin_size = 0.05   # Also try 0.1, 1, 200
-threshold = 1  # Also try 0.1, 50, 100
+bin_size = 0.1   # Also try 0.1, 1, 200
+threshold = 50  # Also try 0.1, 50, 100
 
 # Function to create dataset name from bin and threshold
 def create_dataset_name(bin_size, threshold):
