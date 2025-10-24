@@ -105,7 +105,7 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
 # Define allowed bin sizes
-allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_', #'bin0_05_', 
+allowed_bin_prefixes = ['bin0_05_', 'bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_', 
                         'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_', 'bin1000_']
 
 # Filter dataset files to only include allowed bin sizes
@@ -290,6 +290,112 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             if 'Group' not in super_test_df.columns:
                 super_test_df['Group'] = super_test_df['index_id'].map(id_to_group).fillna('Unknown')
             
+            # CRITICAL FIX: Ensure both training and super test have all three groups
+            # Define all possible groups (assuming there are 3 groups based on your comment)
+            all_possible_groups = set(df5_spectra['Group'].unique())  # Get all groups from the full dataset
+            print(f"All possible groups in full dataset: {sorted(all_possible_groups)}")
+            
+            # Check what groups are in training data
+            training_groups = set(filtered_dataset['Group'].unique())
+            super_test_groups = set(super_test_df['Group'].unique())
+            
+            print(f"Training groups: {sorted(training_groups)}")
+            print(f"Super test groups: {sorted(super_test_groups)}")
+            
+            # Find missing groups in training data
+            missing_in_training = all_possible_groups - training_groups
+            missing_in_super_test = all_possible_groups - super_test_groups
+            
+            if missing_in_training:
+                print(f"Groups missing in training data: {sorted(missing_in_training)}")
+                # Add dummy samples for missing groups in training data
+                for missing_group in missing_in_training:
+                    # Create a dummy row with the missing group
+                    dummy_row = filtered_dataset.iloc[0:1].copy()  # Copy structure from first row
+                    dummy_row['Group'] = missing_group
+                    dummy_row['index_id'] = -999  # Use dummy index_id
+                    filtered_dataset = pd.concat([filtered_dataset, dummy_row], ignore_index=True)
+                    print(f"Added dummy sample for missing group: {missing_group}")
+                
+                # Recreate train/test split with dummy samples included
+                smiles_groups = filtered_dataset.groupby('SMILES_spectra')
+                train_indices = []
+                test_indices = []
+                
+                np.random.seed(42)
+                for smiles, group in smiles_groups:
+                    idx = group.index.values
+                    n = len(idx)
+                    np.random.shuffle(idx)
+                    split = n // 2
+                    test_indices.extend(idx[:split])
+                    train_indices.extend(idx[split:])
+                
+                train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
+                test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
+                
+                # Add index column
+                train_data['index'] = range(len(train_data))
+                test_data['index'] = range(len(test_data))
+                
+                # Reprocess data
+                train_data_processed = fd.add_response_and_log_response(train_data.copy(), df5_subset, smiles_col='SMILES_spectra')
+                test_data_processed = fd.add_response_and_log_response(test_data.copy(), df5_subset, smiles_col='SMILES_spectra')
+                
+                # Recreate tensors
+                print("Recreating tensors with all groups...")
+                x_train_with_group, y_train_emb, y_train_tox, y_train_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_full(
+                        train_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
+
+                x_val_with_group, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor = fd.create_dataset_tensors_condenc_full(
+                    test_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
+                
+                # Recreate model with updated input size
+                actual_input_size = x_train_with_group.shape[1]
+                print(f"Updated model input size: {actual_input_size}")
+                
+                # Delete old model and create new one
+                del cond_encoder_current
+                torch.cuda.empty_cache()
+                
+                cond_encoder_current = fd.Cond_Encoder_full(input_size=actual_input_size,
+                                                            output_size=output_size, 
+                                                            num_layers=num_layers).to(device)
+                
+                # Recreate DataLoaders
+                train_dataset = TensorDataset(x_train_with_group, y_train_emb, y_train_tox, y_train_morgan, train_indices_tensor)
+                val_dataset = TensorDataset(x_val_with_group, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor)
+                train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=False, num_workers=0)
+                val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, pin_memory=False, num_workers=0)
+                
+                # Retrain model
+                print("Retraining model with all groups...")
+                trained_cond_encoder = fd.train_model_condenc_full(
+                    model=cond_encoder_current,
+                    train_data=train_loader,
+                    val_data=val_loader,
+                    epochs=epochs,
+                    learning_rate=lr,
+                    lambda1=lambda1,
+                    lambda2=lambda2,
+                    lambda3=lambda3,
+                    criterion1=criterion1,
+                    criterion2=criterion2,
+                    criterion3=criterion3,
+                    device=device,
+                    config=chemnet_tox_morgan_config
+                )
+            
+            if missing_in_super_test:
+                print(f"Groups missing in super test data: {sorted(missing_in_super_test)}")
+                # Add dummy samples for missing groups in super test data
+                for missing_group in missing_in_super_test:
+                    dummy_row = super_test_df.iloc[0:1].copy()
+                    dummy_row['Group'] = missing_group
+                    dummy_row['index_id'] = -999  # Use dummy index_id
+                    super_test_df = pd.concat([super_test_df, dummy_row], ignore_index=True)
+                    print(f"Added dummy sample for missing group in super test: {missing_group}")
+            
             # Add index column and process super test set
             super_test_df['index'] = range(len(super_test_df))
             super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df5_subset, smiles_col='SMILES_spectra')
@@ -298,11 +404,15 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             x_super_test_with_group, y_super_test_emb, y_super_test_tox, y_super_test_morgan, super_test_indices_tensor = fd.create_dataset_tensors_condenc_full(
                 super_test_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
             
+            # DEBUG: Check tensor shapes
+            print(f"Training tensor shape: {x_train_with_group.shape}")
+            print(f"Super test tensor shape: {x_super_test_with_group.shape}")
+            
             # Generate predictions on super test set
             with torch.no_grad():
                 super_test_predictions = cond_encoder_current(x_super_test_with_group).cpu().numpy()
                 super_test_tox_predictions = super_test_predictions[:, 512]  # Element 512 for toxicity
-            
+                
             # Calculate super test set percent errors
             super_test_tox_true = y_super_test_tox.cpu().numpy().flatten()
             super_test_tox_pred = super_test_tox_predictions.flatten()
@@ -358,9 +468,68 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
 
             super_test_predictions_filename = f"super_test_cond_enc_full_{bin_part}_{threshold_part}_df_spectra.parquet"
             super_test_predictions_path = os.path.join(super_test_output_folder, super_test_predictions_filename)
-            super_test_output_df.to_parquet(super_test_predictions_path)
-            print(f"Saved super test predictions to {super_test_predictions_filename}")
-        
+            
+            # Robust parquet-only saving with comprehensive error handling
+            try:
+                super_test_output_df.to_parquet(super_test_predictions_path, index=False)
+                print(f"✓ Successfully saved super test predictions to {super_test_predictions_filename}")
+                print(f"  File path: {super_test_predictions_path}")
+                print(f"  DataFrame shape: {super_test_output_df.shape}")
+                
+                # Verify the file was actually created and check its size
+                if os.path.exists(super_test_predictions_path):
+                    file_size = os.path.getsize(super_test_predictions_path)
+                    print(f"  ✓ File confirmed: {file_size:,} bytes")
+                    
+                    # Quick validation - try to read it back
+                    try:
+                        test_df = pd.read_parquet(super_test_predictions_path)
+                        print(f"  ✓ File validation passed: {test_df.shape}")
+                        del test_df  # Clean up
+                    except Exception as read_error:
+                        print(f"  ⚠️ Warning: File saved but cannot be read back: {str(read_error)}")
+                        # Try to save again with different parameters
+                        try:
+                            super_test_output_df.to_parquet(super_test_predictions_path, index=False, engine='pyarrow')
+                            print(f"  ✓ Re-saved with pyarrow engine")
+                        except Exception as retry_error:
+                            print(f"  ✗ Retry with pyarrow failed: {str(retry_error)}")
+                else:
+                    print(f"  ✗ ERROR: File was not created at expected location")
+                    
+            except Exception as save_error:
+                print(f"✗ ERROR saving {super_test_predictions_filename}: {str(save_error)}")
+                print(f"  Error type: {type(save_error).__name__}")
+                
+                # Try different parquet engines
+                engines_to_try = ['pyarrow', 'fastparquet']
+                saved_successfully = False
+                
+                for engine in engines_to_try:
+                    if saved_successfully:
+                        break
+                    try:
+                        print(f"  Attempting save with {engine} engine...")
+                        super_test_output_df.to_parquet(super_test_predictions_path, index=False, engine=engine)
+                        
+                        # Verify this save worked
+                        if os.path.exists(super_test_predictions_path):
+                            file_size = os.path.getsize(super_test_predictions_path)
+                            print(f"  ✓ Successfully saved with {engine}: {file_size:,} bytes")
+                            saved_successfully = True
+                        else:
+                            print(f"  ✗ {engine} engine failed - file not created")
+                            
+                    except Exception as engine_error:
+                        print(f"  ✗ {engine} engine failed: {str(engine_error)}")
+                
+                if not saved_successfully:
+                    print(f"  ✗ CRITICAL: All parquet save attempts failed for {dataset_name}")
+                    print(f"      DataFrame info: {super_test_output_df.dtypes}")
+                    print(f"      Memory usage: {super_test_output_df.memory_usage(deep=True).sum():,} bytes")
+        else:
+            print("No super test samples found in this dataset - skipping save")
+            
         # Store results for analysis
         cond_encoder_results.append({
             'Dataset': dataset_name,
