@@ -439,6 +439,8 @@ lambda2 = 5
 class Cond_Encoder_chemnet_tox(nn.Module):
     def __init__(self, input_size, output_size, num_layers):
         super().__init__()
+        self.max_tox_value = 10000  # Maximum value for sigmoid scaling
+        
         layers = []
         layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
         for i in range(num_layers):
@@ -448,7 +450,19 @@ class Cond_Encoder_chemnet_tox(nn.Module):
         self.encoder = nn.Sequential(*layers)
 
     def forward(self, x):
-        return self.encoder(x)
+        output = self.encoder(x)
+        
+        # Split the output
+        embedding_output = output[:, :512]  # ChemNet embeddings (no activation)
+        toxicity_raw = output[:, 512:]      # Raw toxicity output
+        
+        # Apply scaled sigmoid only to toxicity part
+        toxicity_output = torch.sigmoid(toxicity_raw) * self.max_tox_value
+        
+        # Concatenate back together
+        final_output = torch.cat([embedding_output, toxicity_output], dim=1)
+        
+        return final_output
 
 def train_model_condenc_chemnet_tox(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, 
                                     lambda1, lambda2, device, config = chemnet_tox_config):
@@ -579,8 +593,10 @@ lambda3 = 1
 
 # Conditional Encoder architecture
 class Cond_Encoder_chemnet_tox_morgan(nn.Module):
-    def __init__(self, input_size, output_size, num_layers):
+    def __init__(self, input_size, output_size, num_layers, max_tox_value=10.0):
         super().__init__()
+        self.max_tox_value = max_tox_value  # Maximum value for sigmoid scaling
+        
         layers = []
         layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
         for i in range(num_layers):
@@ -590,7 +606,33 @@ class Cond_Encoder_chemnet_tox_morgan(nn.Module):
         self.encoder = nn.Sequential(*layers)
 
     def forward(self, x):
-        return self.encoder(x)
+        output = self.encoder(x)
+        
+        # Split the output into three parts
+        embedding_output = output[:, :512]    # ChemNet embeddings (no activation)
+        toxicity_raw = output[:, 512:513]     # Raw toxicity output (1 column)
+        morgan_output = output[:, 513:]       # Morgan fingerprints (no activation)
+        
+        # Apply scaled sigmoid only to toxicity part
+        toxicity_output = torch.sigmoid(toxicity_raw) * self.max_tox_value
+        
+        # Concatenate back together
+        final_output = torch.cat([embedding_output, toxicity_output, morgan_output], dim=1)
+        
+        return final_output
+# class Cond_Encoder_chemnet_tox_morgan(nn.Module):
+#     def __init__(self, input_size, output_size, num_layers):
+#         super().__init__()
+#         layers = []
+#         layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
+#         for i in range(num_layers):
+#             layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+#             if i < num_layers - 1:
+#                 layers.append(nn.LeakyReLU(inplace=True))
+#         self.encoder = nn.Sequential(*layers)
+
+#     def forward(self, x):
+#         return self.encoder(x)
 
 def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, 
                                            lambda1, lambda2, lambda3, device, config = chemnet_tox_morgan_config):
@@ -729,7 +771,6 @@ def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, 
     wandb.finish()
     return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses
 
-
 # Conditional encoder (ChemNet + Toxicity + Morgan Fingerprints + group(external condition)) 
 # MUST BE ADJUSTED TO INCLUDE GROUP CONDITION
 # batch_size = __
@@ -748,6 +789,7 @@ lambda3 = 1
 class Cond_Encoder_full(nn.Module):
     def __init__(self, input_size, output_size, num_layers):
         super().__init__()
+        
         layers = []
         layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
         for i in range(num_layers):
@@ -757,173 +799,34 @@ class Cond_Encoder_full(nn.Module):
         self.encoder = nn.Sequential(*layers)
 
     def forward(self, x):
-        return self.encoder(x)
-
-def train_model_condenc_full(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, 
-                                           lambda1, lambda2, lambda3, device, config = chemnet_tox_morgan_config):
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    wandb.init(entity=config['wandb_entity'],
-               project=config['wandb_project'],
-               config=config) 
-               
-    # Initialize lists to store losses
-    train_losses = []
-    val_losses = []
+        output = self.encoder(x)
+        
+        # Split the output into three parts
+        embedding_output = output[:, :512]    # ChemNet embeddings (no activation)
+        toxicity_raw = output[:, 512:513]     # Raw toxicity output (1 column)
+        morgan_output = output[:, 513:]       # Morgan fingerprints (no activation)
+        
+        # Apply scaled sigmoid only to toxicity part
+        toxicity_output = torch.sigmoid(toxicity_raw) * np.log(100000) # Sigmoid layer with bound at log(100000)=11.51
+        
+        # Concatenate back together
+        final_output = torch.cat([embedding_output, toxicity_output, morgan_output], dim=1)
+        
+        return final_output
     
-    # Store individual loss components (after lambda weighting)
-    train_embedding_losses = []
-    train_toxicity_losses = []
-    train_morgan_losses = []
-    val_embedding_losses = []
-    val_toxicity_losses = []
-    val_morgan_losses = []
+# class Cond_Encoder_full(nn.Module):
+#     def __init__(self, input_size, output_size, num_layers):
+#         super().__init__()
+#         layers = []
+#         layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
+#         for i in range(num_layers):
+#             layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+#             if i < num_layers - 1:
+#                 layers.append(nn.LeakyReLU(inplace=True))
+#         self.encoder = nn.Sequential(*layers)
 
-    for epoch in range(epochs):
-        model.train()
-        running_loss = 0.0
-        running_embedding_loss = 0.0
-        running_toxicity_loss = 0.0
-        running_morgan_loss = 0.0
-        
-        for batch_with_group, true_embeddings, true_log_tox, true_morgan, _ in train_data:
-            batch_with_group = batch_with_group.to(device)  # Input includes spectra + group encoding
-            true_embeddings = true_embeddings.to(device)
-            true_log_tox = true_log_tox.to(device)
-            true_morgan = true_morgan.to(device)
-
-            optimizer.zero_grad()
-            batch_predicted_combined = model(batch_with_group)  # Forward pass with group info
-            
-            # Embedding Loss
-            batch_predicted_embeddings = batch_predicted_combined[:, :512] # First 512 columns
-            loss1 = criterion1(batch_predicted_embeddings, true_embeddings) # loss1 (embedding loss)
-            # Response Loss
-            batch_predicted_log_tox = batch_predicted_combined[:, 512:513] # 512th column
-            loss2 = criterion2(batch_predicted_log_tox, true_log_tox) # loss2 (toxicity loss)
-            # Morgan Loss
-            batch_predicted_morgan = batch_predicted_combined[:, 513:] # Last 2048 columns
-            loss3 = criterion3(batch_predicted_morgan, true_morgan) # loss3 (morgan loss)
-
-            # Apply lambda weighting
-            weighted_loss1 = lambda1 * loss1
-            weighted_loss2 = lambda2 * loss2
-            weighted_loss3 = lambda3 * loss3
-            
-            # Total loss with modular weights (group is NOT included in loss)
-            total_loss = weighted_loss1 + weighted_loss2 + weighted_loss3
-
-            total_loss.backward()
-            optimizer.step()
-            
-            # Accumulate losses
-            running_loss += total_loss.item()
-            running_embedding_loss += weighted_loss1.item()
-            running_toxicity_loss += weighted_loss2.item()
-            running_morgan_loss += weighted_loss3.item()
-            
-        average_train_loss = running_loss / len(train_data)
-        average_train_embedding_loss = running_embedding_loss / len(train_data)
-        average_train_toxicity_loss = running_toxicity_loss / len(train_data)
-        average_train_morgan_loss = running_morgan_loss / len(train_data)
-        wandb.log({"average_train_loss": average_train_loss})
-        wandb.log({"average_train_embedding_loss": average_train_embedding_loss})
-        wandb.log({"average_train_toxicity_loss": average_train_toxicity_loss})
-        wandb.log({"average_train_morgan_loss": average_train_morgan_loss})
-
-        model.eval()
-        val_loss = 0.0
-        val_embedding_loss = 0.0
-        val_toxicity_loss = 0.0
-        val_morgan_loss = 0.0
-        
-        with torch.no_grad():
-            for val_batch_with_group, val_true_embeddings, val_true_tox, val_true_morgan, _ in val_data:
-                val_batch_with_group = val_batch_with_group.to(device)  # Input includes spectra + group encoding
-                val_true_embeddings = val_true_embeddings.to(device)
-                val_true_tox = val_true_tox.to(device)
-                val_true_morgan = val_true_morgan.to(device)
-
-                val_batch_predicted = model(val_batch_with_group)  # Forward pass with group info
-                val_batch_predicted_embeddings = val_batch_predicted[:, :512]
-                val_batch_predicted_tox = val_batch_predicted[:, 512:513]
-                val_batch_predicted_morgan = val_batch_predicted[:, 513:]
-
-                # Calculate individual losses (group is NOT included in loss calculation)
-                val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
-                val_loss2 = criterion2(val_batch_predicted_tox, val_true_tox)
-                val_loss3 = criterion3(val_batch_predicted_morgan, val_true_morgan)
-                
-                # Apply lambda weighting
-                val_weighted_loss1 = lambda1 * val_loss1
-                val_weighted_loss2 = lambda2 * val_loss2
-                val_weighted_loss3 = lambda3 * val_loss3
-                
-                # Accumulate losses
-                val_loss += (val_weighted_loss1 + val_weighted_loss2 + val_weighted_loss3).item()
-                val_embedding_loss += val_weighted_loss1.item()
-                val_toxicity_loss += val_weighted_loss2.item()
-                val_morgan_loss += val_weighted_loss3.item()
-                
-        average_val_loss = val_loss / len(val_data)
-        average_val_embedding_loss = val_embedding_loss / len(val_data)
-        average_val_toxicity_loss = val_toxicity_loss / len(val_data)
-        average_val_morgan_loss = val_morgan_loss / len(val_data)
-        wandb.log({"average_val_loss": average_val_loss})
-        wandb.log({"average_val_embedding_loss": average_val_embedding_loss})
-        wandb.log({"average_val_toxicity_loss": average_val_toxicity_loss})
-        wandb.log({"average_val_morgan_loss": average_val_morgan_loss})
-
-        # Store losses for this epoch
-        train_losses.append(average_train_loss)
-        val_losses.append(average_val_loss)
-        train_embedding_losses.append(average_train_embedding_loss)
-        train_toxicity_losses.append(average_train_toxicity_loss)
-        train_morgan_losses.append(average_train_morgan_loss)
-        val_embedding_losses.append(average_val_embedding_loss)
-        val_toxicity_losses.append(average_val_toxicity_loss)
-        val_morgan_losses.append(average_val_morgan_loss)
-
-        if epoch % 10 == 0 or epoch == epochs - 1:
-            print(f'Epoch [{epoch+1}/{epochs}]')
-            print(f'   Training loss: {average_train_loss:.6f}')
-            print(f'   Training embedding loss: {average_train_embedding_loss:.6f}')
-            print(f'   Training toxicity loss: {average_train_toxicity_loss:.6f}')
-            print(f'   Training morgan loss: {average_train_morgan_loss:.6f}')
-            print(f'   Validation loss: {average_val_loss:.6f}')
-            print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
-            print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
-            print(f'   Validation morgan loss: {average_val_morgan_loss:.6f}')
-    wandb.finish()
-    return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses
-
-# Conditional encoder (ChemNet + Toxicity + Morgan Fingerprints + group(external condition)) 
-# INCLUDES GROUP CONDITION AS INPUT BUT NOT IN LOSS
-# batch_size = __
-# epochs = __
-# lr = 0.0001
-# criterion1 = nn.MSELoss()
-# criterion2 = nn.MSELoss()
-# criterion3 = nn.MSELoss()
-# output_size = 2561
-# num_layers = __
-lambda1 = 1
-lambda2 = 5
-lambda3 = 1
-
-# Conditional Encoder architecture - input size should include group encoding dimensions
-class Cond_Encoder_full(nn.Module):
-    def __init__(self, input_size, output_size, num_layers):
-        super().__init__()
-        layers = []
-        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-        for i in range(num_layers):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-            if i < num_layers - 1:
-                layers.append(nn.LeakyReLU(inplace=True))
-        self.encoder = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.encoder(x)
+#     def forward(self, x):
+#         return self.encoder(x)
 
 def train_model_condenc_full(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, 
                                            lambda1, lambda2, lambda3, device, config = chemnet_tox_morgan_config):
