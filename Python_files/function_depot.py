@@ -61,62 +61,7 @@ chemnet_tox_morgan_config = {
         'embedding_type' : "ChemNet + Toxicity + Morgan Fingerprints",
         'encoder_type' : "Conditional Encoder"
     }
-### ================================================= AFFINE TRANSFORMATION ================================================= ###
-def affine_trans_sig(z, z_min, z_max, IS):
-    """
-    PyTorch-compatible affine transformation for use in neural networks.
-    Maps values from range [z_min, z_max] to the Identity Segment range.
-    
-    Parameters:
-    - z: torch.Tensor of predicted values from network
-    - z_min: float, minimum value of the input range (network output range)
-    - z_max: float, maximum value of the input range (network output range)
-    - IS: tuple/list with two floats, (a, b), the Identity Segment range
-    
-    Returns:
-    - Fz: transformed z values mapped to IS range (same shape as z)
-    """
-    a, b = IS
-    
-    # Avoid division by zero
-    if z_max == z_min:
-        return torch.full_like(z, (a + b) / 2)
-    
-    # Calculate alpha and beta for affine transformation
-    # Maps [z_min, z_max] -> [a, b]
-    alpha = (b - a) / (z_max - z_min)
-    beta = a - alpha * z_min
-    
-    Fz = alpha * z + beta
-    return Fz
 
-def inv_affine_trans_sig(Fz, target_min, target_max, IS):
-    """
-    PyTorch-compatible inverse affine transformation.
-    Maps values from Identity Segment range to target range [target_min, target_max].
-    
-    Parameters:
-    - Fz: torch.Tensor of values in IS range (after sigmoid)
-    - target_min: float, minimum value of the target output range
-    - target_max: float, maximum value of the target output range
-    - IS: tuple/list with two floats, (a, b), the Identity Segment range
-    
-    Returns:
-    - z: values mapped to target range (same shape as Fz)
-    """
-    a, b = IS
-    
-    # Avoid division by zero
-    if target_max == target_min:
-        return torch.full_like(Fz, (target_min + target_max) / 2)
-    
-    # Calculate alpha and beta for inverse transformation
-    # Maps [a, b] -> [target_min, target_max]
-    alpha = (target_max - target_min) / (b - a)
-    beta = target_min - alpha * a
-    
-    z = alpha * Fz + beta
-    return z
 
 
 ### ======================================================= ENCODERS ======================================================= ###
@@ -838,58 +783,72 @@ def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, 
 # criterion3 = nn.MSELoss()
 # output_size = 2561
 # num_layers = __
-lambda1 = 1
-lambda2 = 5
-lambda3 = 1
+# lambda1 = 1
+# lambda2 = 5
+# lambda3 = 1
+
+### ================================================= AFFINE TRANSFORMATION ================================================= ###
+def affine_trans_sig(z, z_min, z_max, IS):
+    """
+    PyTorch-compatible affine transformation for use in neural networks.
+    Maps values from range [z_min, z_max] to the Identity Segment range.
+    
+    Parameters:
+    - z: torch.Tensor of predicted values from network
+    - z_min: float, minimum value of the input range (network output range)
+    - z_max: float, maximum value of the input range (network output range)
+    - IS: tuple/list with two floats, (a, b), the Identity Segment range
+    
+    Returns:
+    - Fz: transformed z values mapped to IS range (same shape as z)
+    """
+    a, b = IS
+    
+    # Avoid division by zero
+    if z_max == z_min:
+        return torch.full_like(z, (a + b) / 2)
+    
+    # Calculate alpha and beta for affine transformation
+    # Maps [z_min, z_max] -> [a, b]
+    alpha = (b - a) / (z_max - z_min)
+    beta = a - alpha * z_min
+    
+    Fz = alpha * z + beta
+    return Fz
+
+def inv_affine_trans_sig(Fz, target_min, target_max, IS):
+    """
+    PyTorch-compatible inverse affine transformation.
+    Maps values from Identity Segment range to target range [target_min, target_max].
+    
+    Parameters:
+    - Fz: torch.Tensor of values in IS range (after sigmoid)
+    - target_min: float, minimum value of the target output range
+    - target_max: float, maximum value of the target output range
+    - IS: tuple/list with two floats, (a, b), the Identity Segment range
+    
+    Returns:
+    - z: values mapped to target range (same shape as Fz)
+    """
+    a, b = IS
+    
+    # Avoid division by zero
+    if target_max == target_min:
+        return torch.full_like(Fz, (target_min + target_max) / 2)
+    
+    # Calculate alpha and beta for inverse transformation
+    # Maps [a, b] -> [target_min, target_max]
+    alpha = (target_max - target_min) / (b - a)
+    beta = target_min - alpha * a
+    
+    z = alpha * (Fz) + beta
+    return z
 
 # Conditional Encoder architecture
-# class Cond_Encoder_full(nn.Module):
-#     def __init__(self, input_size, output_size, num_layers):
-#         super().__init__()
-        
-#         layers = []
-#         layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-#         for i in range(num_layers):
-#             layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-#             if i < num_layers - 1:
-#                 layers.append(nn.LeakyReLU(inplace=True))
-#         self.encoder = nn.Sequential(*layers)
-
-#     def forward(self, x):
-
-#         output = self.encoder(x)
-        
-#         # Split the output into three parts
-#         embedding_output = output[:, :512]    # ChemNet embeddings
-#         toxicity_raw = output[:, 512:513]     # Raw toxicity output (1 column)
-#         morgan_output = output[:, 513:]       # Morgan fingerprints
-        
-#         # Apply sigmoid activation to each part with their appropriate ranges
-        
-#         # Embedding processing (range: -1 to 1)
-#         embedding_transformed = affine_trans_sig(embedding_output, -2, 2, (-0.205, 0.205))
-#         embedding_sigmoid = torch.sigmoid(4 * embedding_transformed)
-#         embedding_final = inv_affine_trans_sig(embedding_sigmoid, -2, 2, (-0.205, 0.205))
-        
-#         # Toxicity processing (range: 0 to log(max_tox))
-#         toxicity_transformed = affine_trans_sig(toxicity_raw, 0.0, np.log(46965.46394), (-0.205, 0.205))
-#         toxicity_sigmoid = torch.sigmoid(4 * toxicity_transformed)
-#         toxicity_final = inv_affine_trans_sig(toxicity_sigmoid, 0.0, np.log(46965.46394), (-0.205, 0.205))
-
-#         # Morgan processing (range: 0 to 1)
-#         morgan_transformed = affine_trans_sig(morgan_output, 0.0, 1.0, (-0.205, 0.205))
-#         morgan_sigmoid = torch.sigmoid(4 * morgan_transformed)
-#         morgan_final = inv_affine_trans_sig(morgan_sigmoid, 0.0, 1.0, (-0.205, 0.205))
-        
-#         # Concatenate back together
-#         final_output = torch.cat([embedding_final, toxicity_final, morgan_final], dim=1)
-        
-#         return final_output
-
-# # Here are the older versions without the affine transforms but one with the tox bound    
 class Cond_Encoder_full(nn.Module):
     def __init__(self, input_size, output_size, num_layers):
         super().__init__()
+        
         layers = []
         layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
         for i in range(num_layers):
@@ -899,20 +858,66 @@ class Cond_Encoder_full(nn.Module):
         self.encoder = nn.Sequential(*layers)
 
     def forward(self, x):
+
         output = self.encoder(x)
         
         # Split the output into three parts
-        embedding_output = output[:, :512]    # ChemNet embeddings (no activation)
+        embedding_output = output[:, :512]    # ChemNet embeddings
         toxicity_raw = output[:, 512:513]     # Raw toxicity output (1 column)
-        morgan_output = output[:, 513:]       # Morgan fingerprints (no activation)
+        morgan_output = output[:, 513:]       # Morgan fingerprints
         
-        # Apply scaled sigmoid only to toxicity part
-        toxicity_output = torch.sigmoid(toxicity_raw) * np.log(100000) 
+        # Apply sigmoid activation to each part with their appropriate ranges
+        
+        # Embedding processing (range: -1 to 1)
+        embedding_transformed = affine_trans_sig(embedding_output, -2, 2, (-0.3, 0.3))
+        embedding_sigmoid = torch.sigmoid(4 * (embedding_transformed)) - 0.5
+        embedding_final = inv_affine_trans_sig(embedding_sigmoid, -2, 2, (-0.3, 0.3))
+        
+        # Toxicity processing (range: 0 to log(max_tox))
+        toxicity_transformed = affine_trans_sig(toxicity_raw, -10.0, np.log(46965.46394), (-0.3, 0.3))
+        toxicity_sigmoid = torch.sigmoid(4 * (toxicity_transformed))  - 0.5
+        toxicity_final = inv_affine_trans_sig(toxicity_sigmoid, -10.0, np.log(46965.46394), (-0.3, 0.3))
+
+        # Morgan processing (range: 0 to 1)
+        morgan_transformed = affine_trans_sig(morgan_output, -1.0, 2.0, (-0.3, 0.3))
+        morgan_sigmoid = torch.sigmoid(4 * (morgan_transformed)) - 0.5
+        morgan_final = inv_affine_trans_sig(morgan_sigmoid, -1, 2.0, (-0.3, 0.3))
         
         # Concatenate back together
-        final_output = torch.cat([embedding_output, toxicity_output, morgan_output], dim=1)
+        final_output = torch.cat([embedding_final, toxicity_final, morgan_final], dim=1)
         
         return final_output
+
+
+#  # Here are the older versions without the affine transforms but one with the tox bound    
+# class Cond_Encoder_full(nn.Module):
+#     def __init__(self, input_size, output_size, num_layers):
+#         super().__init__()
+#         layers = []
+#         layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
+#         for i in range(num_layers):
+#             layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+#             if i < num_layers - 1:
+#                 layers.append(nn.LeakyReLU(inplace=True))
+#         self.encoder = nn.Sequential(*layers)
+
+#     def forward(self, x):
+#         output = self.encoder(x)
+        
+#         # Split the output into three parts
+#         embedding_output = output[:, :512]    # ChemNet embeddings (no activation)
+#         toxicity_raw = output[:, 512:513]     # Raw toxicity output (1 column)
+#         morgan_output = output[:, 513:]       # Morgan fingerprints (no activation)
+        
+#         # Apply scaled sigmoid only to toxicity part
+#         toxicity_output = torch.sigmoid(toxicity_raw) * np.log(100000) 
+#         embedding_output = torch.sigmoid(embedding_output) * 3 
+#         morgan_output = torch.sigmoid(morgan_output) * 2
+
+#         # Concatenate back together
+#         final_output = torch.cat([embedding_output, toxicity_output, morgan_output], dim=1)
+        
+#         return final_output
 
 def train_model_condenc_full(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, 
                                            lambda1, lambda2, lambda3, device, config = chemnet_tox_morgan_config):
