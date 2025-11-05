@@ -869,23 +869,24 @@ class Cond_Encoder_full(nn.Module):
         # Apply sigmoid activation to each part with their appropriate ranges
         
         # Embedding processing (range: -1 to 1)
-        embedding_transformed = affine_trans_sig(embedding_output, -2, 2, (-0.3, 0.3))
+        embedding_transformed = affine_trans_sig(embedding_output, -2, 2, (-0.5, 0.5))
         embedding_sigmoid = torch.sigmoid(4 * (embedding_transformed)) - 0.5
-        embedding_final = inv_affine_trans_sig(embedding_sigmoid, -2, 2, (-0.3, 0.3))
+        embedding_final = inv_affine_trans_sig(embedding_sigmoid, -2, 2, (-0.5, 0.5))
         
         # Toxicity processing (range: 0 to log(max_tox))
-        toxicity_transformed = affine_trans_sig(toxicity_raw, -10.0, np.log(46965.46394), (-0.3, 0.3))
+        toxicity_transformed = affine_trans_sig(toxicity_raw, -10.0, np.log(100000), (-0.5, 0.5)) # np.log(100000), np.log(46965.46394)
         toxicity_sigmoid = torch.sigmoid(4 * (toxicity_transformed))  - 0.5
-        toxicity_final = inv_affine_trans_sig(toxicity_sigmoid, -10.0, np.log(46965.46394), (-0.3, 0.3))
+        toxicity_final = inv_affine_trans_sig(toxicity_sigmoid, -10.0, np.log(100000), (-0.5, 0.5))
 
         # Morgan processing (range: 0 to 1)
-        morgan_transformed = affine_trans_sig(morgan_output, -1.0, 2.0, (-0.3, 0.3))
+        morgan_transformed = affine_trans_sig(morgan_output, 0, 1.0, (-0.2, 0.2))
         morgan_sigmoid = torch.sigmoid(4 * (morgan_transformed)) - 0.5
-        morgan_final = inv_affine_trans_sig(morgan_sigmoid, -1, 2.0, (-0.3, 0.3))
+        morgan_final = inv_affine_trans_sig(morgan_sigmoid, 0, 1.0, (-0.2, 0.2))
         
         # Concatenate back together
         final_output = torch.cat([embedding_final, toxicity_final, morgan_final], dim=1)
-        
+        # final_output = torch.cat([embedding_output, toxicity_final, morgan_output], dim=1)
+
         return final_output
 
 
@@ -911,8 +912,8 @@ class Cond_Encoder_full(nn.Module):
         
 #         # Apply scaled sigmoid only to toxicity part
 #         toxicity_output = torch.sigmoid(toxicity_raw) * np.log(100000) 
-#         embedding_output = torch.sigmoid(embedding_output) * 3 
-#         morgan_output = torch.sigmoid(morgan_output) * 2
+#         # embedding_output = torch.sigmoid(embedding_output) * 3 
+#         # morgan_output = torch.sigmoid(morgan_output) * 2
 
 #         # Concatenate back together
 #         final_output = torch.cat([embedding_output, toxicity_output, morgan_output], dim=1)
