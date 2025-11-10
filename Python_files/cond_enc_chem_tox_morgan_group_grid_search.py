@@ -69,7 +69,7 @@ criterion3 = nn.MSELoss()  # Added criterion3 for Morgan fingerprints
 # Encoder architecture (With Validation Set)
 
 # CONDITIONAL ENCODER TRAINING LOOP - Process all grid search datasets
-print("=== CONDITIONAL ENCODER (ChemNet + Toxicity + Morgan + Group) GRID SEARCH TRAINING ===")
+print("=== CONDITIONAL ENCODER (ChemNet + Toxicity + Morgan + Group + CE_clean) GRID SEARCH TRAINING ===")
 
 # Set up device and load ChemNet reference
 device = fd.set_up_gpu()
@@ -113,6 +113,12 @@ print("Creating Group mapping from df5_spectra...")
 id_to_group = dict(zip(df5_spectra['index_id'], df5_spectra['Group']))
 print(f"Group mapping created with {len(id_to_group)} entries")
 
+# Create CE_clean mapping from df5exp_spectra
+print("Creating CE_clean mapping from df5exp_spectra...")
+df5exp_spectra = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df5exp_spectra.parquet")
+id_to_ce_clean = dict(zip(df5exp_spectra['index_id'], df5exp_spectra['CE_clean']))
+print(f"CE_clean mapping created with {len(id_to_ce_clean)} entries")
+
 # Loop through each dataset and evaluate toxicity predictions from element 512 (0-indexed)
 for i, dataset_name in enumerate(sorted(dataset_names), 1):
     print(f"\nProcessing {i}/{len(dataset_names)}: {dataset_name}")
@@ -133,6 +139,11 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             dataset = dataset.copy()  # Defragment DataFrame
             dataset['Group'] = dataset['index_id'].map(id_to_group).fillna('Unknown')
             print(f"Added Group column. Unique groups: {dataset['Group'].nunique()}")
+        
+        # Add CE_clean column if not present
+        if 'CE_clean' not in dataset.columns:
+            dataset['CE_clean'] = dataset['index_id'].map(id_to_ce_clean).fillna('Unknown')
+            print(f"Added CE_clean column. Unique CE_clean values: {dataset['CE_clean'].nunique()}")
                 
         # Apply filtering
         counts = dataset['SMILES_spectra'].value_counts()
@@ -170,24 +181,24 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         # NEW CODE - Move model creation AFTER tensor creation:
         # Create tensors first
         print("Creating tensors...")
-        x_train_with_group, y_train_emb, y_train_tox, y_train_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_full(
+        x_train_with_ext, y_train_emb, y_train_tox, y_train_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_full2(
                 train_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
 
-        x_val_with_group, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor = fd.create_dataset_tensors_condenc_full(
+        x_val_with_ext, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor = fd.create_dataset_tensors_condenc_full2(
             test_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
 
         # Get the actual input size and create model accordingly
-        actual_input_size = x_train_with_group.shape[1]
+        actual_input_size = x_train_with_ext.shape[1]
         print(f"Creating model with input size: {actual_input_size} for {dataset_name}")
 
         # Create model with correct input size
         cond_encoder_current = fd.Cond_Encoder_full(input_size=actual_input_size,
-                                                    output_size=output_size, 
-                                                    num_layers=num_layers).to(device)
+                                                     output_size=output_size, 
+                                                     num_layers=num_layers).to(device)
 
         # Continue with DataLoader creation...
-        train_dataset = TensorDataset(x_train_with_group, y_train_emb, y_train_tox, y_train_morgan, train_indices_tensor)
-        val_dataset = TensorDataset(x_val_with_group, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor)
+        train_dataset = TensorDataset(x_train_with_ext, y_train_emb, y_train_tox, y_train_morgan, train_indices_tensor)
+        val_dataset = TensorDataset(x_val_with_ext, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor)
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=False, num_workers=0)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, pin_memory=False, num_workers=0)
                 
@@ -198,9 +209,9 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         chemnet_tox_morgan_config = {
             'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
             'wandb_project': 'MIT-Lincoln-Lab',
-            'wandb_name': f"cond_enc_full_{dataset_name}",
+            'wandb_name': f"cond_enc_full2_{dataset_name}",
             'gpu': True,
-            'encoder_type': "Conditional Encoder ChemNet + Toxicity + Morgan + Group",
+            'encoder_type': "Conditional Encoder ChemNet + Toxicity + Morgan + Group + CE_clean",
             # Model hyperparameters
             'batch_size': batch_size,
             'output_size': output_size,
@@ -216,7 +227,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         }
         
         # Train conditional encoder using the group-conditioned training function
-        trained_cond_encoder = fd.train_model_condenc_full(
+        trained_cond_encoder = fd.train_model_condenc_full2(
             model=cond_encoder_current,
             train_data=train_loader,
             val_data=val_loader,
@@ -236,11 +247,11 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         cond_encoder_current.eval()
         with torch.no_grad():
             # Train predictions - extract toxicity prediction from element 512
-            train_predictions = cond_encoder_current(x_train_with_group).cpu().numpy()
+            train_predictions = cond_encoder_current(x_train_with_ext).cpu().numpy()
             train_tox_predictions = train_predictions[:, 512]  # Element 512 (0-indexed for 513th element)
             
             # Test predictions - extract toxicity prediction from element 512
-            test_predictions = cond_encoder_current(x_val_with_group).cpu().numpy()
+            test_predictions = cond_encoder_current(x_val_with_ext).cpu().numpy()
             test_tox_predictions = test_predictions[:, 512]  # Element 512 (0-indexed for 513th element)
         
         # Get true toxicity values
@@ -266,13 +277,13 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         full_data_processed = pd.concat([train_data_processed, test_data_processed], ignore_index=True)
         
         # Create tensors for full dataset
-        x_full_with_group, y_full_emb, y_full_tox, y_full_morgan, full_indices_tensor = fd.create_dataset_tensors_condenc_full(
+        x_full_with_ext, y_full_emb, y_full_tox, y_full_morgan, full_indices_tensor = fd.create_dataset_tensors_condenc_full2(
             full_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
         
         # Generate conditional encoder outputs
         cond_encoder_current.eval()
         with torch.no_grad():
-            full_cond_outputs = cond_encoder_current(x_full_with_group).cpu().numpy()
+            full_cond_outputs = cond_encoder_current(x_full_with_ext).cpu().numpy()
         
         # Create output DataFrame with 2561 dimensions + metadata
         emb_cols = [f'cond_emb_{j}' for j in range(512)]  # ChemNet embedding dimensions
@@ -315,10 +326,10 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             threshold_part = f"thresh{thresh_part}"  # Keep thresh0_001 format
         
         # Save conditional encoder outputs (2561 dimensions + 4 metadata = 2565 columns total)
-        output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_full_outputs"
+        output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_full2_outputs"
         os.makedirs(output_folder, exist_ok=True)
 
-        predictions_filename = f"cond_enc_full_{bin_part}_{threshold_part}_df_spectra.parquet"
+        predictions_filename = f"cond_enc_full2_{bin_part}_{threshold_part}_df_spectra.parquet"
         predictions_path = os.path.join(output_folder, predictions_filename)
         output_df.to_parquet(predictions_path)
 
@@ -328,7 +339,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         print(f"Saved prediction dataframe to {predictions_filename}")
 
         # Clear GPU memory after each dataset
-        del x_train_with_group, x_val_with_group, y_train_emb, y_train_tox, y_train_morgan, y_val_emb, y_val_tox, y_val_morgan
+        del x_train_with_ext, x_val_with_ext, y_train_emb, y_train_tox, y_train_morgan, y_val_emb, y_val_tox, y_val_morgan
         del train_indices_tensor, val_indices_tensor
         del cond_encoder_current, trained_cond_encoder
         torch.cuda.empty_cache()
@@ -341,7 +352,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
 
 
 
-print(f"\n=== CONDITIONAL ENCODER (ChemNet + Toxicity + Morgan + Group) EVALUATION COMPLETED ===")
+print(f"\n=== CONDITIONAL ENCODER (ChemNet + Toxicity + Morgan + Group + CE_clean) EVALUATION COMPLETED ===")
 print(f"Successfully processed {len(cond_encoder_results)} datasets")
 
 # Convert results to DataFrame for heatmap analysis
@@ -371,7 +382,6 @@ print(f"Mean Test Mean % Error: {df_cond_percent_error_results['Test_Mean_Percen
 
 
 
-# OLD VERSION OF THE CODE WITHOUT THRESHOLD SELECTION
 
 
 
@@ -380,34 +390,14 @@ print(f"Mean Test Mean % Error: {df_cond_percent_error_results['Test_Mean_Percen
 
 
 
-# # Basic Package Imports
-# import pandas as pd
-# import numpy as np
-# import matplotlib.pyplot as plt
-# import seaborn as sns
 
-# # Non-basic package imports
-# import torch
-# import torch.nn as nn
-# from torch.utils.data import TensorDataset, DataLoader
-# import requests
 
-# # Packages I don't understand
-# from fcd_torch import FCD
-# import rdkit
-# from collections import Counter
-# import gc
-# import pickle
-# import wandb
 
-# # Add the Python_files directory to the Python path
-# import sys
-# import os
-# sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
 
-# # Now you can import your modules
-# import functions_enc as f
-# import function_depot as fd
+
+
+
+
 
 # ##### ==================== GLOBAL REWRITE OF TRAINING PROCESS ==================== #####
 # # The big idea of this rewrite is to change the metric we evaulate by. Thus far we have stuck to MSE as our loss function and this
@@ -440,8 +430,8 @@ print(f"Mean Test Mean % Error: {df_cond_percent_error_results['Test_Mean_Percen
 # batch_size = 256
 # epochs= 300
 # lr = 0.0003
-# lambda1 = 1
-# lambda2 = 6
+# lambda1 = 2
+# lambda2 = 5
 # lambda3 = 1  # Added lambda3 for Morgan fingerprints
 # # criterion=nn.MSELoss() # Still use MSELoss for the embedding criterion
 # criterion1 = nn.MSELoss()
@@ -470,16 +460,22 @@ print(f"Mean Test Mean % Error: {df_cond_percent_error_results['Test_Mean_Percen
 # # Get all dataset files from the grid search folder
 # dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
-# # Define allowed bin sizes
-# allowed_bin_prefixes = ['bin0_05_', 'bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
-#                         'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_', 'bin1000_']
-
-# # Filter dataset files to only include allowed bin sizes
+# # Allow all bin sizes and thresholds
+# # allowed_bin_prefixes = ['bin0_05_', 'bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
+# #                         'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_', 'bin1000_']
+# # allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
+# #                              'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
+# #                              'thresh50', 'thresh100']
+# # Allow only range of interest as given by Rod/Sasha
+# allowed_bin_prefixes = [ 'bin1_', 'bin2_'] #'bin0_5_',
+# allowed_threshold_suffixes = ['thresh0_01', 'thresh0_1'] #'thresh0_05',
+# # Filter dataset files to only include allowed bin sizes and thresholds
 # dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
+# dataset_files = [f for f in dataset_files if any(suffix in f for suffix in allowed_threshold_suffixes)]
 
 # dataset_names = [f.replace('.parquet', '') for f in dataset_files]
 
-# print(f"Found {len(dataset_names)} datasets to process (excluding bin size 0.01)")
+# print(f"Found {len(dataset_names)} datasets to process (filtered by bin sizes and thresholds)")
 
 # # Storage for conditional encoder results
 # cond_encoder_results = []
@@ -726,3 +722,19 @@ print(f"Mean Test Mean % Error: {df_cond_percent_error_results['Test_Mean_Percen
 # print("\nConditional Encoder Results Summary:")
 # print(f"Mean Test Median % Error: {df_cond_percent_error_results['Test_Median_Percent_Error'].mean():.2f}%")
 # print(f"Mean Test Mean % Error: {df_cond_percent_error_results['Test_Mean_Percent_Error'].mean():.2f}%")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

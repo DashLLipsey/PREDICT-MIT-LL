@@ -26,6 +26,34 @@ sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
 # Now you can import your modules
 import functions_enc as f
 import function_depot as fd
+# Basic Package Imports
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Non-basic package imports
+import torch
+import torch.nn as nn
+from torch.utils.data import TensorDataset, DataLoader
+import requests
+
+# Packages I don't understand
+from fcd_torch import FCD
+import rdkit
+from collections import Counter
+import gc
+import pickle
+import wandb
+
+# Add the Python_files directory to the Python path
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
+
+# Now you can import your modules
+import functions_enc as f
+import function_depot as fd
 
 ##### ==================== SUPER TEST SET SMILES ==================== #####
 # Define super test set SMILES to remove from training
@@ -84,7 +112,7 @@ criterion3 = nn.MSELoss()  # Added criterion3 for Morgan fingerprints
 # Encoder architecture (With Validation Set)
 
 # CONDITIONAL ENCODER TRAINING LOOP - Process all grid search datasets
-print("=== CONDITIONAL ENCODER (ChemNet + Toxicity + Morgan + Group) SUPER TEST TRAINING ===")
+print("=== CONDITIONAL ENCODER (ChemNet + Toxicity + Morgan + Group + CE_clean) SUPER TEST TRAINING ===")
 print(f"Super test SMILES to remove from training: {len(super_test_smiles)}")
 
 # Set up device and load ChemNet reference
@@ -129,6 +157,12 @@ print("Creating Group mapping from df5_spectra...")
 id_to_group = dict(zip(df5_spectra['index_id'], df5_spectra['Group']))
 print(f"Group mapping created with {len(id_to_group)} entries")
 
+# Create CE_clean mapping from df5exp_spectra
+print("Creating CE_clean mapping from df5exp_spectra...")
+df5exp_spectra = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df5exp_spectra.parquet")
+id_to_ce_clean = dict(zip(df5exp_spectra['index_id'], df5exp_spectra['CE_clean']))
+print(f"CE_clean mapping created with {len(id_to_ce_clean)} entries")
+
 # Loop through each dataset and evaluate toxicity predictions from element 512 (0-indexed)
 for i, dataset_name in enumerate(sorted(dataset_names), 1):
     print(f"\nProcessing {i}/{len(dataset_names)}: {dataset_name}")
@@ -155,6 +189,11 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         if 'Group' not in dataset_no_super_test.columns:
             dataset_no_super_test['Group'] = dataset_no_super_test['index_id'].map(id_to_group).fillna('Unknown')
             print(f"Added Group column. Unique groups: {dataset_no_super_test['Group'].nunique()}")
+        
+        # Add CE_clean column if not present
+        if 'CE_clean' not in dataset_no_super_test.columns:
+            dataset_no_super_test['CE_clean'] = dataset_no_super_test['index_id'].map(id_to_ce_clean).fillna('Unknown')
+            print(f"Added CE_clean column. Unique CE_clean values: {dataset_no_super_test['CE_clean'].nunique()}")
                 
         # Apply filtering (>=4 spectra per SMILES)
         counts = dataset_no_super_test['SMILES_spectra'].value_counts()
@@ -192,24 +231,24 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         # NEW CODE - Move model creation AFTER tensor creation:
         # Create tensors first
         print("Creating tensors...")
-        x_train_with_group, y_train_emb, y_train_tox, y_train_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_full(
+        x_train_with_ext, y_train_emb, y_train_tox, y_train_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_full2(
                 train_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
 
-        x_val_with_group, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor = fd.create_dataset_tensors_condenc_full(
+        x_val_with_ext, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor = fd.create_dataset_tensors_condenc_full2(
             test_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
 
         # Get the actual input size and create model accordingly
-        actual_input_size = x_train_with_group.shape[1]
+        actual_input_size = x_train_with_ext.shape[1]
         print(f"Creating model with input size: {actual_input_size} for {dataset_name}")
 
         # Create model with correct input size
-        cond_encoder_current = fd.Cond_Encoder_full(input_size=actual_input_size,
-                                                    output_size=output_size, 
-                                                    num_layers=num_layers).to(device)
+        cond_encoder_current = fd.Cond_Encoder_full2(input_size=actual_input_size,
+                                                     output_size=output_size, 
+                                                     num_layers=num_layers).to(device)
 
         # Continue with DataLoader creation...
-        train_dataset = TensorDataset(x_train_with_group, y_train_emb, y_train_tox, y_train_morgan, train_indices_tensor)
-        val_dataset = TensorDataset(x_val_with_group, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor)
+        train_dataset = TensorDataset(x_train_with_ext, y_train_emb, y_train_tox, y_train_morgan, train_indices_tensor)
+        val_dataset = TensorDataset(x_val_with_ext, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor)
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=False, num_workers=0)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, pin_memory=False, num_workers=0)
                 
@@ -220,9 +259,9 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         chemnet_tox_morgan_config = {
             'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
             'wandb_project': 'MIT-Lincoln-Lab',
-            'wandb_name': f"cond_enc_super_test_{dataset_name}",
+            'wandb_name': f"cond_enc_super_test2_{dataset_name}",
             'gpu': True,
-            'encoder_type': "Conditional Encoder ChemNet + Toxicity + Morgan + Group (Super Test)",
+            'encoder_type': "Conditional Encoder ChemNet + Toxicity + Morgan + Group + CE_clean (Super Test)",
             # Model hyperparameters
             'batch_size': batch_size,
             'output_size': output_size,
@@ -260,11 +299,11 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         cond_encoder_current.eval()
         with torch.no_grad():
             # Train predictions - extract toxicity prediction from element 512
-            train_predictions = cond_encoder_current(x_train_with_group).cpu().numpy()
+            train_predictions = cond_encoder_current(x_train_with_ext).cpu().numpy()
             train_tox_predictions = train_predictions[:, 512]  # Element 512 (0-indexed for 513th element)
             
             # Test predictions - extract toxicity prediction from element 512
-            test_predictions = cond_encoder_current(x_val_with_group).cpu().numpy()
+            test_predictions = cond_encoder_current(x_val_with_ext).cpu().numpy()
             test_tox_predictions = test_predictions[:, 512]  # Element 512 (0-indexed for 513th element)
         
         # Get true toxicity values for regular test set
@@ -296,32 +335,53 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             if 'Group' not in super_test_df.columns:
                 super_test_df['Group'] = super_test_df['index_id'].map(id_to_group).fillna('Unknown')
             
-            # CRITICAL FIX: Ensure both training and super test have all three groups
-            # Define all possible groups (assuming there are 3 groups based on your comment)
-            all_possible_groups = set(df5_spectra['Group'].unique())  # Get all groups from the full dataset
-            print(f"All possible groups in full dataset: {sorted(all_possible_groups)}")
+            # Add CE_clean column to super test set
+            if 'CE_clean' not in super_test_df.columns:
+                super_test_df['CE_clean'] = super_test_df['index_id'].map(id_to_ce_clean).fillna('Unknown')
             
-            # Check what groups are in training data
+            # CRITICAL FIX: Ensure both training and super test have all groups and CE_clean values
+            # Define all possible groups and CE_clean values
+            all_possible_groups = set(df5_spectra['Group'].unique())  # Get all groups from the full dataset
+            all_possible_ce_clean = set(df5exp_spectra['CE_clean'].unique())  # Get all CE_clean values
+            print(f"All possible groups in full dataset: {sorted(all_possible_groups)}")
+            print(f"All possible CE_clean values in full dataset: {sorted(all_possible_ce_clean)}")
+            
+            # Check what groups and CE_clean values are in training data
             training_groups = set(filtered_dataset['Group'].unique())
             super_test_groups = set(super_test_df['Group'].unique())
+            training_ce_clean = set(filtered_dataset['CE_clean'].unique())
+            super_test_ce_clean = set(super_test_df['CE_clean'].unique())
             
             print(f"Training groups: {sorted(training_groups)}")
             print(f"Super test groups: {sorted(super_test_groups)}")
+            print(f"Training CE_clean values: {sorted(training_ce_clean)}")
+            print(f"Super test CE_clean values: {sorted(super_test_ce_clean)}")
             
-            # Find missing groups in training data
-            missing_in_training = all_possible_groups - training_groups
-            missing_in_super_test = all_possible_groups - super_test_groups
+            # Find missing groups and CE_clean values in training data
+            missing_groups_in_training = all_possible_groups - training_groups
+            missing_groups_in_super_test = all_possible_groups - super_test_groups
+            missing_ce_clean_in_training = all_possible_ce_clean - training_ce_clean
+            missing_ce_clean_in_super_test = all_possible_ce_clean - super_test_ce_clean
             
-            if missing_in_training:
-                print(f"Groups missing in training data: {sorted(missing_in_training)}")
+            if missing_groups_in_training or missing_ce_clean_in_training:
+                print(f"Groups missing in training data: {sorted(missing_groups_in_training)}")
+                print(f"CE_clean values missing in training data: {sorted(missing_ce_clean_in_training)}")
+                
                 # Add dummy samples for missing groups in training data
-                for missing_group in missing_in_training:
-                    # Create a dummy row with the missing group
+                for missing_group in missing_groups_in_training:
                     dummy_row = filtered_dataset.iloc[0:1].copy()  # Copy structure from first row
                     dummy_row['Group'] = missing_group
                     dummy_row['index_id'] = -999  # Use dummy index_id
                     filtered_dataset = pd.concat([filtered_dataset, dummy_row], ignore_index=True)
                     print(f"Added dummy sample for missing group: {missing_group}")
+                
+                # Add dummy samples for missing CE_clean values in training data
+                for missing_ce in missing_ce_clean_in_training:
+                    dummy_row = filtered_dataset.iloc[0:1].copy()  # Copy structure from first row
+                    dummy_row['CE_clean'] = missing_ce
+                    dummy_row['index_id'] = -998  # Use dummy index_id
+                    filtered_dataset = pd.concat([filtered_dataset, dummy_row], ignore_index=True)
+                    print(f"Added dummy sample for missing CE_clean: {missing_ce}")
                 
                 # Recreate train/test split with dummy samples included
                 smiles_groups = filtered_dataset.groupby('SMILES_spectra')
@@ -349,33 +409,33 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
                 test_data_processed = fd.add_response_and_log_response(test_data.copy(), df5_subset, smiles_col='SMILES_spectra')
                 
                 # Recreate tensors
-                print("Recreating tensors with all groups...")
-                x_train_with_group, y_train_emb, y_train_tox, y_train_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_full(
+                print("Recreating tensors with all groups and CE_clean values...")
+                x_train_with_ext, y_train_emb, y_train_tox, y_train_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_full2(
                         train_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
 
-                x_val_with_group, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor = fd.create_dataset_tensors_condenc_full(
+                x_val_with_ext, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor = fd.create_dataset_tensors_condenc_full2(
                     test_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
                 
                 # Recreate model with updated input size
-                actual_input_size = x_train_with_group.shape[1]
+                actual_input_size = x_train_with_ext.shape[1]
                 print(f"Updated model input size: {actual_input_size}")
                 
                 # Delete old model and create new one
                 del cond_encoder_current
                 torch.cuda.empty_cache()
                 
-                cond_encoder_current = fd.Cond_Encoder_full(input_size=actual_input_size,
+                cond_encoder_current = fd.Cond_Encoder_full2(input_size=actual_input_size,
                                                             output_size=output_size, 
                                                             num_layers=num_layers).to(device)
                 
                 # Recreate DataLoaders
-                train_dataset = TensorDataset(x_train_with_group, y_train_emb, y_train_tox, y_train_morgan, train_indices_tensor)
-                val_dataset = TensorDataset(x_val_with_group, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor)
+                train_dataset = TensorDataset(x_train_with_ext, y_train_emb, y_train_tox, y_train_morgan, train_indices_tensor)
+                val_dataset = TensorDataset(x_val_with_ext, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor)
                 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=False, num_workers=0)
                 val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, pin_memory=False, num_workers=0)
                 
                 # Retrain model
-                print("Retraining model with all groups...")
+                print("Retraining model with all groups and CE_clean values...")
                 trained_cond_encoder = fd.train_model_condenc_full(
                     model=cond_encoder_current,
                     train_data=train_loader,
@@ -392,31 +452,41 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
                     config=chemnet_tox_morgan_config
                 )
             
-            if missing_in_super_test:
-                print(f"Groups missing in super test data: {sorted(missing_in_super_test)}")
+            if missing_groups_in_super_test:
+                print(f"Groups missing in super test data: {sorted(missing_groups_in_super_test)}")
                 # Add dummy samples for missing groups in super test data
-                for missing_group in missing_in_super_test:
+                for missing_group in missing_groups_in_super_test:
                     dummy_row = super_test_df.iloc[0:1].copy()
                     dummy_row['Group'] = missing_group
                     dummy_row['index_id'] = -999  # Use dummy index_id
                     super_test_df = pd.concat([super_test_df, dummy_row], ignore_index=True)
                     print(f"Added dummy sample for missing group in super test: {missing_group}")
             
+            if missing_ce_clean_in_super_test:
+                print(f"CE_clean values missing in super test data: {sorted(missing_ce_clean_in_super_test)}")
+                # Add dummy samples for missing CE_clean values in super test data
+                for missing_ce in missing_ce_clean_in_super_test:
+                    dummy_row = super_test_df.iloc[0:1].copy()
+                    dummy_row['CE_clean'] = missing_ce
+                    dummy_row['index_id'] = -998  # Use dummy index_id
+                    super_test_df = pd.concat([super_test_df, dummy_row], ignore_index=True)
+                    print(f"Added dummy sample for missing CE_clean in super test: {missing_ce}")
+            
             # Add index column and process super test set
             super_test_df['index'] = range(len(super_test_df))
             super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df5_subset, smiles_col='SMILES_spectra')
             
             # Create tensors for super test set
-            x_super_test_with_group, y_super_test_emb, y_super_test_tox, y_super_test_morgan, super_test_indices_tensor = fd.create_dataset_tensors_condenc_full(
+            x_super_test_with_ext, y_super_test_emb, y_super_test_tox, y_super_test_morgan, super_test_indices_tensor = fd.create_dataset_tensors_condenc_full2(
                 super_test_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
             
             # DEBUG: Check tensor shapes
-            print(f"Training tensor shape: {x_train_with_group.shape}")
-            print(f"Super test tensor shape: {x_super_test_with_group.shape}")
+            print(f"Training tensor shape: {x_train_with_ext.shape}")
+            print(f"Super test tensor shape: {x_super_test_with_ext.shape}")
             
             # Generate predictions on super test set
             with torch.no_grad():
-                super_test_predictions = cond_encoder_current(x_super_test_with_group).cpu().numpy()
+                super_test_predictions = cond_encoder_current(x_super_test_with_ext).cpu().numpy()
                 super_test_tox_predictions = super_test_predictions[:, 512]  # Element 512 for toxicity
 
             # Calculate super test set percent errors
@@ -469,10 +539,10 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         
         # Save super test set predictions if they exist
         if super_test_output_df is not None:
-            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_super_test"
+            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_super_test2"
             os.makedirs(super_test_output_folder, exist_ok=True)
 
-            super_test_predictions_filename = f"super_test_cond_enc_full_{bin_part}_{threshold_part}_df_spectra.parquet"
+            super_test_predictions_filename = f"super_test_cond_enc_full2_{bin_part}_{threshold_part}_df_spectra.parquet"
             super_test_predictions_path = os.path.join(super_test_output_folder, super_test_predictions_filename)
             
             # Robust parquet-only saving with comprehensive error handling
@@ -557,10 +627,10 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         print(f"Test Mean % Error: {test_mean_percent_error:.1f}%")
 
         # Clear GPU memory after each dataset
-        del x_train_with_group, x_val_with_group, y_train_emb, y_train_tox, y_train_morgan, y_val_emb, y_val_tox, y_val_morgan
+        del x_train_with_ext, x_val_with_ext, y_train_emb, y_train_tox, y_train_morgan, y_val_emb, y_val_tox, y_val_morgan
         del train_indices_tensor, val_indices_tensor
-        if 'x_super_test_with_group' in locals():
-            del x_super_test_with_group, y_super_test_emb, y_super_test_tox, y_super_test_morgan, super_test_indices_tensor
+        if 'x_super_test_with_ext' in locals():
+            del x_super_test_with_ext, y_super_test_emb, y_super_test_tox, y_super_test_morgan, super_test_indices_tensor
         del cond_encoder_current, trained_cond_encoder
         torch.cuda.empty_cache()
         
@@ -570,7 +640,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         torch.cuda.empty_cache()
         continue
 
-print(f"\n=== CONDITIONAL ENCODER (ChemNet + Toxicity + Morgan + Group) SUPER TEST EVALUATION COMPLETED ===")
+print(f"\n=== CONDITIONAL ENCODER (ChemNet + Toxicity + Morgan + Group + CE_clean) SUPER TEST EVALUATION COMPLETED ===")
 print(f"Successfully processed {len(cond_encoder_results)} datasets")
 
 # Convert results to DataFrame for analysis
@@ -619,34 +689,14 @@ print(f"Total samples removed across all datasets: {df_cond_super_test_results['
 
 
 
-# # Basic Package Imports
-# import pandas as pd
-# import numpy as np
-# import matplotlib.pyplot as plt
-# import seaborn as sns
 
-# # Non-basic package imports
-# import torch
-# import torch.nn as nn
-# from torch.utils.data import TensorDataset, DataLoader
-# import requests
 
-# # Packages I don't understand
-# from fcd_torch import FCD
-# import rdkit
-# from collections import Counter
-# import gc
-# import pickle
-# import wandb
 
-# # Add the Python_files directory to the Python path
-# import sys
-# import os
-# sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
 
-# # Now you can import your modules
-# import functions_enc as f
-# import function_depot as fd
+
+
+
+
 
 # ##### ==================== SUPER TEST SET SMILES ==================== #####
 # # Define super test set SMILES to remove from training
@@ -729,12 +779,18 @@ print(f"Total samples removed across all datasets: {df_cond_super_test_results['
 # allowed_bin_prefixes = ['bin0_05_', 'bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_', 
 #                         'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_', 'bin1000_']
 
-# # Filter dataset files to only include allowed bin sizes
+# # Define allowed threshold values
+# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
+#                              'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
+#                              'thresh50', 'thresh100']
+
+# # Filter dataset files to only include allowed bin sizes and thresholds
 # dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
+# dataset_files = [f for f in dataset_files if any(suffix in f for suffix in allowed_threshold_suffixes)]
 
 # dataset_names = [f.replace('.parquet', '') for f in dataset_files]
 
-# print(f"Found {len(dataset_names)} datasets to process (excluding bin size 0.01)")
+# print(f"Found {len(dataset_names)} datasets to process (filtered by bin sizes and thresholds)")
 
 # # Storage for conditional encoder results
 # cond_encoder_results = []
