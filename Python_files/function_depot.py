@@ -1232,6 +1232,235 @@ def set_up_gpu():
 
     return device
 
+def pre_filter_and_round_spectrum_mz(df, spectrum_col, min_mz=0, max_mz=1000, round_precision=0.001):
+    """
+    Pre-filter a DataFrame by removing m/z values outside the specified range AND round m/z values 
+    to the nearest specified precision from spectrum strings.
+    This reduces memory usage before processing with spectrum_string_to_dataframe.
+    
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        Input DataFrame with spectrum data
+    spectrum_col : str
+        Name of the column containing spectrum strings
+    min_mz : float, optional
+        Minimum m/z value to keep. Default is 0.
+    max_mz : float, optional
+        Maximum m/z value to keep. Default is 1000.
+    round_precision : float, optional
+        Precision to round m/z values to. Default is 0.001.
+    
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame with filtered and rounded spectrum strings
+    """
+    def filter_and_round_spectrum_string(spectrum_str, min_mz, max_mz, round_precision):
+        if pd.isna(spectrum_str):
+            return ""
+        
+        pairs = spectrum_str.split()
+        filtered_pairs = []
+        
+        for pair in pairs:
+            try:
+                x, y = pair.split(":")
+                mz_value = float(x)
+                
+                # First filter by range
+                if min_mz <= mz_value <= max_mz:
+                    # Then round to specified precision
+                    rounded_mz = round(mz_value / round_precision) * round_precision
+                    # Format to avoid floating point precision issues
+                    rounded_mz_str = f"{rounded_mz:.3f}"
+                    filtered_pairs.append(f"{rounded_mz_str}:{y}")
+            except:
+                continue
+        
+        return " ".join(filtered_pairs)
+    
+    df_filtered = df.copy()
+    print(f"Filtering {len(df)} rows, keeping m/z values between {min_mz} and {max_mz}, rounding to nearest {round_precision}...")
+    df_filtered[spectrum_col] = df_filtered[spectrum_col].apply(
+        lambda x: filter_and_round_spectrum_string(x, min_mz, max_mz, round_precision)
+    )
+    print("Filtering and rounding complete.")
+    
+    return df_filtered
+
+# Filter my spectra into set ranges so that they can be combined after binning is completed. 
+def pre_filter_spectrum_by_mz_range(df, spectrum_col, min_mz=0, max_mz=1000):
+    """
+    Pre-filter a DataFrame by removing m/z values outside the specified range from spectrum strings.
+    This reduces memory usage before processing with spectrum_string_to_dataframe.
+    
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        Input DataFrame with spectrum data
+    spectrum_col : str
+        Name of the column containing spectrum strings
+    min_mz : float, optional
+        Minimum m/z value to keep. Default is 0.
+    max_mz : float, optional
+        Maximum m/z value to keep. Default is 1000.
+    
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame with filtered spectrum strings
+    """
+    def filter_spectrum_string(spectrum_str, min_mz, max_mz):
+        if pd.isna(spectrum_str):
+            return ""
+        
+        pairs = spectrum_str.split()
+        filtered_pairs = []
+        
+        for pair in pairs:
+            try:
+                x, y = pair.split(":")
+                mz_value = float(x)
+                if min_mz <= mz_value <= max_mz:
+                    filtered_pairs.append(pair)
+            except:
+                continue
+        
+        return " ".join(filtered_pairs)
+    
+    df_filtered = df.copy()
+    print(f"Filtering {len(df)} rows, keeping m/z values between {min_mz} and {max_mz}...")
+    df_filtered[spectrum_col] = df_filtered[spectrum_col].apply(
+        lambda x: filter_spectrum_string(x, min_mz, max_mz)
+    )
+    print("Filtering complete.")
+    
+    return df_filtered
+
+def pre_filter_dataframe_by_mz_max(df, spectrum_col, max_mz=1000):
+    """
+    Pre-filter a DataFrame by removing high m/z values from spectrum strings.
+    This reduces memory usage before processing with spectrum_string_to_dataframe.
+    
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        Input DataFrame with spectrum data
+    spectrum_col : str
+        Name of the column containing spectrum strings
+    max_mz : float, optional
+        Maximum m/z value to keep. Default is 1000.
+    
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame with filtered spectrum strings
+    """
+    def filter_spectrum_string(spectrum_str, max_mz):
+        if pd.isna(spectrum_str):
+            return ""
+        
+        pairs = spectrum_str.split()
+        filtered_pairs = []
+        
+        for pair in pairs:
+            try:
+                x, y = pair.split(":")
+                if float(x) <= max_mz:
+                    filtered_pairs.append(pair)
+            except:
+                continue
+        
+        return " ".join(filtered_pairs)
+    
+    df_filtered = df.copy()
+    print(f"Filtering {len(df)} rows, removing m/z values > {max_mz}...")
+    df_filtered[spectrum_col] = df_filtered[spectrum_col].apply(
+        lambda x: filter_spectrum_string(x, max_mz)
+    )
+    print("Filtering complete.")
+    
+    return df_filtered
+
+# def spectrum_string_to_dataframe(df, spectrum_col, smiles_col, max_mz=1000):
+#     """
+#     Converts a DataFrame with a spectrum column (string of 'x:y' pairs) into a matrix
+#     where columns are unique x values, rows are spectra (even for duplicate SMILES), and values are y (intensity).
+#     Creates and preserves an index_id column for tracking. All spectral columns will be float type with float values.
+#     Spectral columns are sorted by their float values in ascending order.
+    
+#     Parameters:
+#     -----------
+#     df : pd.DataFrame
+#         Input DataFrame with spectrum data
+#     spectrum_col : str
+#         Name of the column containing spectrum strings
+#     smiles_col : str
+#         Name of the column containing SMILES strings
+#     max_mz : float, optional
+#         Maximum m/z value to include. Values above this threshold are removed. Default is 1000.
+#     """
+#     # Create a copy of the input DataFrame and add index_id
+#     df_copy = df.copy()
+#     df_copy['index_id'] = range(len(df_copy))
+    
+#     # Collect all unique x values (m/z) and convert to float
+#     x_values_set = set()
+#     data_rows = []
+    
+#     for idx, row in df_copy.iterrows():
+#         spectrum = row[spectrum_col]
+#         pairs = spectrum.split()
+#         xy_dict = {}
+        
+#         for pair in pairs:
+#             try:
+#                 x, y = pair.split(":") # Split into x and y
+#                 x_float = float(x)
+#                 y_float = float(y)
+                
+#                 # Only include m/z values below or equal to the threshold
+#                 if x_float <= max_mz:
+#                     xy_dict[x_float] = y_float
+#                     x_values_set.add(x_float)
+#             except Exception:
+#                 continue
+        
+#         # Store row data including index_id
+#         data_rows.append({
+#             'original_index': idx,
+#             smiles_col: row[smiles_col],
+#             'index_id': row['index_id'],
+#             'xy_dict': xy_dict
+#         })
+    
+#     # Sort x values by their float values in ascending order
+#     x_values = sorted(x_values_set)
+    
+#     # Build the result DataFrame with columns in sorted order
+#     result_data = {}
+    
+#     # Add SMILES column first
+#     result_data[smiles_col] = [row[smiles_col] for row in data_rows]
+    
+#     # Add spectral columns in sorted order (only those <= max_mz)
+#     for x_val in x_values:
+#         result_data[x_val] = [float(row['xy_dict'].get(x_val, 0.0)) for row in data_rows]
+    
+#     # Add index_id column last
+#     result_data['index_id'] = [row['index_id'] for row in data_rows]
+    
+#     # Create DataFrame - columns will be in the order we added them
+#     df_matrix = pd.DataFrame(result_data)
+    
+#     # Set the index to match original DataFrame
+#     original_indices = [row['original_index'] for row in data_rows]
+#     df_matrix.index = original_indices
+    
+#     return df_matrix
+
+# Old version without max_mz filtering
 def spectrum_string_to_dataframe(df, spectrum_col, smiles_col):
     """
     Converts a DataFrame with a spectrum column (string of 'x:y' pairs) into a matrix
