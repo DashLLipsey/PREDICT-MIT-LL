@@ -43,7 +43,7 @@ super_test_smiles = [
 
 # ====== SPECIFY BIN SIZE AND THRESHOLD ======
 bin_size = 1   # Change this to your desired bin size (e.g., 0.05, 0.1, 0.5, 1, 2, 5, 10, 25, 50, 100, 200, 500, 1000)
-threshold = 0.01  # Change this to your desired threshold (e.g., 0, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 50, 100)
+threshold = 0.1  # Change this to your desired threshold (e.g., 0, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 50, 100)
 
 # Function to create dataset name from bin and threshold
 def create_dataset_name(bin_size, threshold):
@@ -205,7 +205,7 @@ try:
     print(f"Creating model with input size: {actual_input_size} for {dataset_name}")
 
     # Create model with correct input size
-    cond_encoder_current = fd.Cond_Encoder_full2(input_size=actual_input_size,
+    cond_encoder_current = fd.Cond_Encoder_full(input_size=actual_input_size,
                                                  output_size=output_size, 
                                                  num_layers=num_layers).to(device)
 
@@ -243,7 +243,7 @@ try:
     print(f"Starting training for {epochs} epochs with learning rate {lr}...")
     
     # Train conditional encoder using the group-conditioned training function
-    trained_cond_encoder = fd.train_model_condenc_full(
+    trained_cond_encoder = fd.train_model_condenc_full2(
         model=cond_encoder_current,
         train_data=train_loader,
         val_data=val_loader,
@@ -294,7 +294,7 @@ try:
     # Create tensors for full dataset
     x_full_with_ext, y_full_emb, y_full_tox, y_full_morgan, full_indices_tensor = fd.create_dataset_tensors_condenc_full2(
         full_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
-    
+
     # Generate conditional encoder outputs
     cond_encoder_current.eval()
     with torch.no_grad():

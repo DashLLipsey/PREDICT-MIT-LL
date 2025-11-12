@@ -89,14 +89,14 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
 # Allow all bin sizes and thresholds
-# allowed_bin_prefixes = ['bin0_05_', 'bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
-#                         'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_', 'bin1000_']
-# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
-#                              'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
-#                              'thresh50', 'thresh100']
+allowed_bin_prefixes = ['bin0_05_', 'bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
+                        'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_', 'bin1000_']
+allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
+                             'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
+                             'thresh50', 'thresh100']
 # Allow only range of interest as given by Rod/Sasha
-allowed_bin_prefixes = [ 'bin1_', 'bin2_'] #'bin0_5_',
-allowed_threshold_suffixes = ['thresh0_01', 'thresh0_1'] #'thresh0_05',
+# allowed_bin_prefixes = [ 'bin1_', 'bin0_5_','bin2_'] #'bin0_5_',
+# allowed_threshold_suffixes = ['thresh0_01', 'thresh0_05', 'thresh0_1'] #'thresh0_05',
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
 dataset_files = [f for f in dataset_files if any(suffix in f for suffix in allowed_threshold_suffixes)]
@@ -211,7 +211,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             'wandb_project': 'MIT-Lincoln-Lab',
             'wandb_name': f"cond_enc_full2_{dataset_name}",
             'gpu': True,
-            'encoder_type': "Conditional Encoder ChemNet + Toxicity + Morgan + Group + CE_clean",
+            'encoder_type': "Conditional Encoder ChemNet + Toxicity + Morgan + Group + clean",
             # Model hyperparameters
             'batch_size': batch_size,
             'output_size': output_size,
