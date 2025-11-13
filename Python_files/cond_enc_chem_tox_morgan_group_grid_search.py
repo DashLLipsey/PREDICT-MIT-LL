@@ -182,10 +182,10 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         # Create tensors first
         print("Creating tensors...")
         x_train_with_ext, y_train_emb, y_train_tox, y_train_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_full2(
-                train_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
+                train_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-6)
 
         x_val_with_ext, y_val_emb, y_val_tox, y_val_morgan, val_indices_tensor = fd.create_dataset_tensors_condenc_full2(
-            test_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
+            test_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-6)
 
         # Get the actual input size and create model accordingly
         actual_input_size = x_train_with_ext.shape[1]
@@ -278,7 +278,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         
         # Create tensors for full dataset
         x_full_with_ext, y_full_emb, y_full_tox, y_full_morgan, full_indices_tensor = fd.create_dataset_tensors_condenc_full2(
-            full_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-5)
+            full_data_processed, name_smiles_embedding_df, morgan_df, device, start_idx=1, stop_idx=-6)
         
         # Generate conditional encoder outputs
         cond_encoder_current.eval()
