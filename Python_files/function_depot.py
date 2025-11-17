@@ -844,56 +844,11 @@ def inv_affine_trans_sig(Fz, target_min, target_max, IS):
     z = alpha * (Fz) + beta
     return z
 
-# Conditional Encoder architecture
-class Cond_Encoder_full(nn.Module):
-    def __init__(self, input_size, output_size, num_layers):
-        super().__init__()
-        
-        layers = []
-        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-        for i in range(num_layers):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-            if i < num_layers - 1:
-                layers.append(nn.LeakyReLU(inplace=True))
-        self.encoder = nn.Sequential(*layers)
-
-    def forward(self, x):
-
-        output = self.encoder(x)
-        
-        # Split the output into three parts
-        embedding_output = output[:, :512]    # ChemNet embeddings
-        toxicity_raw = output[:, 512:513]     # Raw toxicity output (1 column)
-        morgan_output = output[:, 513:]       # Morgan fingerprints
-        
-        # Apply sigmoid activation to each part with their appropriate ranges
-        
-        # Embedding processing (range: -1 to 1)
-        embedding_transformed = affine_trans_sig(embedding_output, -2, 2, (-0.5, 0.5))
-        embedding_sigmoid = torch.sigmoid(4 * (embedding_transformed)) - 0.5
-        embedding_final = inv_affine_trans_sig(embedding_sigmoid, -2, 2, (-0.5, 0.5))
-        
-        # Toxicity processing (range: 0 to log(max_tox))
-        toxicity_transformed = affine_trans_sig(toxicity_raw, -10.0, np.log(100000), (-0.5, 0.5)) # np.log(100000), np.log(46965.46394)
-        toxicity_sigmoid = torch.sigmoid(4 * (toxicity_transformed))  - 0.5
-        toxicity_final = inv_affine_trans_sig(toxicity_sigmoid, -10.0, np.log(100000), (-0.5, 0.5))
-
-        # Morgan processing (range: 0 to 1)
-        morgan_transformed = affine_trans_sig(morgan_output, 0, 1.0, (-0.2, 0.2))
-        morgan_sigmoid = torch.sigmoid(4 * (morgan_transformed)) - 0.5
-        morgan_final = inv_affine_trans_sig(morgan_sigmoid, 0, 1.0, (-0.2, 0.2))
-        
-        # Concatenate back together
-        final_output = torch.cat([embedding_final, toxicity_final, morgan_final], dim=1)
-        # final_output = torch.cat([embedding_output, toxicity_final, morgan_output], dim=1)
-
-        return final_output
-
-
-#  # Here are the older versions without the affine transforms but one with the tox bound    
+# # Conditional Encoder architecture
 # class Cond_Encoder_full(nn.Module):
 #     def __init__(self, input_size, output_size, num_layers):
 #         super().__init__()
+        
 #         layers = []
 #         layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
 #         for i in range(num_layers):
@@ -903,22 +858,67 @@ class Cond_Encoder_full(nn.Module):
 #         self.encoder = nn.Sequential(*layers)
 
 #     def forward(self, x):
+
 #         output = self.encoder(x)
         
 #         # Split the output into three parts
-#         embedding_output = output[:, :512]    # ChemNet embeddings (no activation)
+#         embedding_output = output[:, :512]    # ChemNet embeddings
 #         toxicity_raw = output[:, 512:513]     # Raw toxicity output (1 column)
-#         morgan_output = output[:, 513:]       # Morgan fingerprints (no activation)
+#         morgan_output = output[:, 513:]       # Morgan fingerprints
         
-#         # Apply scaled sigmoid only to toxicity part
-#         toxicity_output = torch.sigmoid(toxicity_raw) * np.log(100000) 
-#         # embedding_output = torch.sigmoid(embedding_output) * 3 
-#         # morgan_output = torch.sigmoid(morgan_output) * 2
+#         # Apply sigmoid activation to each part with their appropriate ranges
+        
+#         # Embedding processing (range: -1 to 1)
+#         embedding_transformed = affine_trans_sig(embedding_output, -2, 2, (-0.5, 0.5))
+#         embedding_sigmoid = torch.sigmoid(4 * (embedding_transformed)) - 0.5
+#         embedding_final = inv_affine_trans_sig(embedding_sigmoid, -2, 2, (-0.5, 0.5))
+        
+#         # Toxicity processing (range: 0 to log(max_tox))
+#         toxicity_transformed = affine_trans_sig(toxicity_raw, -10.0, np.log(100000), (-0.5, 0.5)) # np.log(100000), np.log(46965.46394)
+#         toxicity_sigmoid = torch.sigmoid(4 * (toxicity_transformed))  - 0.5
+#         toxicity_final = inv_affine_trans_sig(toxicity_sigmoid, -10.0, np.log(100000), (-0.5, 0.5))
 
-#         # Concatenate back together
-#         final_output = torch.cat([embedding_output, toxicity_output, morgan_output], dim=1)
+#         # Morgan processing (range: 0 to 1)
+#         morgan_transformed = affine_trans_sig(morgan_output, 0, 1.0, (-0.2, 0.2))
+#         morgan_sigmoid = torch.sigmoid(4 * (morgan_transformed)) - 0.5
+#         morgan_final = inv_affine_trans_sig(morgan_sigmoid, 0, 1.0, (-0.2, 0.2))
         
+#         # Concatenate back together
+#         final_output = torch.cat([embedding_final, toxicity_final, morgan_final], dim=1)
+#         # final_output = torch.cat([embedding_output, toxicity_final, morgan_output], dim=1)
+
 #         return final_output
+
+
+ # Here are the older versions without the affine transforms but one with the tox bound    
+class Cond_Encoder_full(nn.Module):
+    def __init__(self, input_size, output_size, num_layers):
+        super().__init__()
+        layers = []
+        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
+        for i in range(num_layers):
+            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i < num_layers - 1:
+                layers.append(nn.LeakyReLU(inplace=True))
+        self.encoder = nn.Sequential(*layers)
+
+    def forward(self, x):
+        output = self.encoder(x)
+        
+        # Split the output into three parts
+        embedding_output = output[:, :512]    # ChemNet embeddings (no activation)
+        toxicity_raw = output[:, 512:513]     # Raw toxicity output (1 column)
+        morgan_output = output[:, 513:]       # Morgan fingerprints (no activation)
+        
+        # Apply scaled sigmoid only to toxicity part
+        toxicity_output = torch.sigmoid(toxicity_raw) * np.log(100000) 
+        # embedding_output = torch.sigmoid(embedding_output) * 3 
+        # morgan_output = torch.sigmoid(morgan_output) * 2
+
+        # Concatenate back together
+        final_output = torch.cat([embedding_output, toxicity_output, morgan_output], dim=1)
+        
+        return final_output
 
 def train_model_condenc_full(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, 
                                            lambda1, lambda2, lambda3, device, config = chemnet_tox_morgan_config):
@@ -1669,6 +1669,7 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory,
     - Dictionary with all created datasets keyed by variable names
     """
     import warnings
+    import gc  # For garbage collection
     
     created_datasets = {}
     
@@ -1726,35 +1727,50 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory,
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
             
-        for bin_size in bin_sizes:
-            for threshold in thresholds:
+        for bin_idx, bin_size in enumerate(bin_sizes):
+            for thresh_idx, threshold in enumerate(thresholds):
                 
                 # Create variable name
                 bin_str = str(bin_size).replace('.', '_')
                 thresh_str = str(threshold).replace('.', '_')
                 var_name = f"bin{bin_str}_thresh{thresh_str}_df_spectra"
                 
-                print(f"Creating {var_name}...")
+                print(f"Creating {var_name} ({bin_idx+1}/{len(bin_sizes)}, {thresh_idx+1}/{len(thresholds)})...")
                 
                 try:
-                    # Start with original data
+                    # Start with original data - create a fresh copy each iteration
                     current_data = df_spectra_original.copy()
                 
                     # Apply threshold filtering first
                     threshold_filtered_data = apply_threshold_filter(current_data, threshold, startindx, stopindx)
                     
+                    # Clear intermediate variables
+                    del current_data
+                    
                     # Then apply binning
                     binned_data = bin_spectra_by_mz_range(threshold_filtered_data, bin_size, indx_id_indx, startindx, stopindx)
                 
+                    # Clear intermediate variables
+                    del threshold_filtered_data
+                    
                     # Fill missing bins
                     filled_data = fill_missing_bins(binned_data, bin_size, indx_id_indx, startindx, stopindx)
+
+                    # Clear intermediate variables
+                    del binned_data
 
                     # Remove duplicate columns before adding response data
                     preserve_cols = [filled_data.columns[0], filled_data.columns[indx_id_indx]]  # SMILES and index_id
                     filled_data_clean = remove_duplicate_columns(filled_data, preserve_cols)
                     
+                    # Clear intermediate variables
+                    del filled_data
+                    
                     # Add response and log response values
                     final_data = add_response_and_log_response(filled_data_clean, df_original)
+                    
+                    # Clear intermediate variables
+                    del filled_data_clean
                     
                     # Ensure index_id is preserved from original data
                     if 'index_id' in df_spectra.columns:
@@ -1766,16 +1782,25 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory,
                         print(f"Warning: {final_duplicate_check} duplicates found in {var_name}, removing...")
                         final_data = final_data.loc[:, ~final_data.columns.duplicated()]
                     
-                    # Store in created_datasets dictionary
-                    created_datasets[var_name] = final_data
+                    # Store in created_datasets dictionary (only if needed for return value)
+                    # Comment out if you don't need to return the datasets to save memory
+                    # created_datasets[var_name] = final_data.copy()
                     
                     # Save to file
                     save_path = f"{save_directory}/{var_name}.parquet"
                     final_data.to_parquet(save_path, index=False)
                     print(f"Saved {var_name} to {save_path} - Shape: {final_data.shape}")
                     
+                    # Clear final_data after saving
+                    del final_data
+                    
+                    # Force garbage collection
+                    gc.collect()
+                    
                 except Exception as e:
                     print(f"Error creating {var_name}: {e}")
+                    # Force garbage collection even on error
+                    gc.collect()
                     continue
 
     print(f"  - {len(bin_sizes)} bin sizes: {bin_sizes}")
@@ -1788,29 +1813,41 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory,
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         
-        for bin_size in bin_sizes:
+        for bin_idx, bin_size in enumerate(bin_sizes):
             # Create variable name for thresh0 (no threshold)
             bin_str = str(bin_size).replace('.', '_')
             var_name = f"bin{bin_str}_thresh_zero_df_spectra"
         
-            print(f"Creating {var_name}...")
+            print(f"Creating {var_name} ({bin_idx+1}/{len(bin_sizes)})...")
             
             try:
-                # Start with original data (no threshold filtering)
+                # Start with original data (no threshold filtering) - create fresh copy
                 current_data = df_spectra_original.copy()
             
                 # Binning only
                 binned_data = bin_spectra_by_mz_range(current_data, bin_size, indx_id_indx, startindx, stopindx)
             
+                # Clear intermediate variables
+                del current_data
+                
                 # Fill missing bins
                 filled_data = fill_missing_bins(binned_data, bin_size, indx_id_indx, startindx, stopindx)
+
+                # Clear intermediate variables
+                del binned_data
 
                 # Remove duplicate columns before adding response data
                 preserve_cols = [filled_data.columns[0], filled_data.columns[indx_id_indx]]  # SMILES and index_id
                 filled_data_clean = remove_duplicate_columns(filled_data, preserve_cols)
                 
+                # Clear intermediate variables
+                del filled_data
+                
                 # Add response and log response values
                 final_data = add_response_and_log_response(filled_data_clean, df_original)
+                
+                # Clear intermediate variables
+                del filled_data_clean
                 
                 # Ensure index_id is preserved from original data
                 if 'index_id' in df_spectra.columns:
@@ -1822,22 +1859,220 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory,
                     print(f"Warning: {final_duplicate_check} duplicates found in {var_name}, removing...")
                     final_data = final_data.loc[:, ~final_data.columns.duplicated()]
                 
-                # Store in created_datasets dictionary
-                created_datasets[var_name] = final_data
+                # Store in created_datasets dictionary (only if needed)
+                # Comment out if you don't need to return the datasets to save memory
+                # created_datasets[var_name] = final_data.copy()
                 
                 # Save to file
                 save_path = f"{save_directory}/{var_name}.parquet"
                 final_data.to_parquet(save_path, index=False)
                 print(f"Saved {var_name} to {save_path} - Shape: {final_data.shape}")
                 
+                # Clear final_data after saving
+                del final_data
+                
+                # Force garbage collection
+                gc.collect()
+                
             except Exception as e:
                 print(f"Error creating {var_name}: {e}")
+                # Force garbage collection even on error
+                gc.collect()
                 continue
 
     print(f"Created {len(bin_sizes)} thresh0 datasets!")
     print(f"Total datasets created: {len(created_datasets)}")
     
+    # Final cleanup
+    del df_spectra_original
+    gc.collect()
+    
     return created_datasets
+
+# def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory, indx_id_indx=-1, startindx=1, stopindx=-1):
+#     """
+#     Creates all binned and thresholded datasets for a complete grid search.
+    
+#     Parameters:
+#     - df_spectra: DataFrame with spectral data (output from spectrum_string_to_dataframe)
+#     - df_original: Original DataFrame with response data (e.g., df4_QQpos)
+#     - bin_sizes: List of bin sizes to use
+#     - thresholds: List of threshold values to use
+#     - save_directory: Directory path to save the parquet files
+    
+#     Returns:
+#     - Dictionary with all created datasets keyed by variable names
+#     """
+#     import warnings
+    
+#     created_datasets = {}
+    
+#     def remove_duplicate_columns(df, preserve_cols=None):
+#         """
+#         Remove duplicate columns while preserving specified columns.
+        
+#         Parameters:
+#         - df: DataFrame to process
+#         - preserve_cols: List of column names to always preserve (first occurrence)
+        
+#         Returns:
+#         - DataFrame with duplicate columns removed
+#         """
+#         if preserve_cols is None:
+#             preserve_cols = []
+        
+#         # Get columns to check for duplicates (exclude preserved columns)
+#         cols_to_check = [col for col in df.columns if col not in preserve_cols]
+#         preserve_mask = [col in preserve_cols for col in df.columns]
+        
+#         # For numerical columns, round to avoid floating point precision issues
+#         rounded_cols = []
+#         for col in cols_to_check:
+#             if isinstance(col, (int, float)):
+#                 rounded_cols.append(round(float(col), 6))  # Round to 6 decimal places
+#             else:
+#                 rounded_cols.append(col)
+        
+#         # Find duplicates in rounded columns
+#         seen = set()
+#         duplicate_mask = []
+        
+#         col_idx = 0
+#         for i, col in enumerate(df.columns):
+#             if preserve_mask[i]:
+#                 duplicate_mask.append(False)  # Never mark preserved columns as duplicates
+#             else:
+#                 rounded_col = rounded_cols[col_idx]
+#                 if rounded_col in seen:
+#                     duplicate_mask.append(True)  # Mark as duplicate
+#                 else:
+#                     seen.add(rounded_col)
+#                     duplicate_mask.append(False)
+#                 col_idx += 1
+        
+#         # Keep only non-duplicate columns
+#         cols_to_keep = [col for i, col in enumerate(df.columns) if not duplicate_mask[i]]
+#         return df[cols_to_keep]
+    
+#     # Create ALL binned and thresholded datasets (complete grid search)
+#     print("Creating all binned and thresholded datasets...")
+#     df_spectra_original = df_spectra.copy()
+    
+#     with warnings.catch_warnings():
+#         warnings.simplefilter("ignore")
+            
+#         for bin_size in bin_sizes:
+#             for threshold in thresholds:
+                
+#                 # Create variable name
+#                 bin_str = str(bin_size).replace('.', '_')
+#                 thresh_str = str(threshold).replace('.', '_')
+#                 var_name = f"bin{bin_str}_thresh{thresh_str}_df_spectra"
+                
+#                 print(f"Creating {var_name}...")
+                
+#                 try:
+#                     # Start with original data
+#                     current_data = df_spectra_original.copy()
+                
+#                     # Apply threshold filtering first
+#                     threshold_filtered_data = apply_threshold_filter(current_data, threshold, startindx, stopindx)
+                    
+#                     # Then apply binning
+#                     binned_data = bin_spectra_by_mz_range(threshold_filtered_data, bin_size, indx_id_indx, startindx, stopindx)
+                
+#                     # Fill missing bins
+#                     filled_data = fill_missing_bins(binned_data, bin_size, indx_id_indx, startindx, stopindx)
+
+#                     # Remove duplicate columns before adding response data
+#                     preserve_cols = [filled_data.columns[0], filled_data.columns[indx_id_indx]]  # SMILES and index_id
+#                     filled_data_clean = remove_duplicate_columns(filled_data, preserve_cols)
+                    
+#                     # Add response and log response values
+#                     final_data = add_response_and_log_response(filled_data_clean, df_original)
+                    
+#                     # Ensure index_id is preserved from original data
+#                     if 'index_id' in df_spectra.columns:
+#                         final_data['index_id'] = df_spectra['index_id'].iloc[:len(final_data)].values
+                    
+#                     # Final duplicate check before saving
+#                     final_duplicate_check = final_data.columns.duplicated().sum()
+#                     if final_duplicate_check > 0:
+#                         print(f"Warning: {final_duplicate_check} duplicates found in {var_name}, removing...")
+#                         final_data = final_data.loc[:, ~final_data.columns.duplicated()]
+                    
+#                     # Store in created_datasets dictionary
+#                     created_datasets[var_name] = final_data
+                    
+#                     # Save to file
+#                     save_path = f"{save_directory}/{var_name}.parquet"
+#                     final_data.to_parquet(save_path, index=False)
+#                     print(f"Saved {var_name} to {save_path} - Shape: {final_data.shape}")
+                    
+#                 except Exception as e:
+#                     print(f"Error creating {var_name}: {e}")
+#                     continue
+
+#     print(f"  - {len(bin_sizes)} bin sizes: {bin_sizes}")
+#     print(f"  - {len(thresholds)} threshold values: {thresholds}")
+#     print(f"  - Plus the existing {len(bin_sizes)} thresh0 datasets")
+
+#     # Create the missing threshold 0 datasets
+#     print("Creating binned-only datasets (thresh0)...")
+    
+#     with warnings.catch_warnings():
+#         warnings.simplefilter("ignore")
+        
+#         for bin_size in bin_sizes:
+#             # Create variable name for thresh0 (no threshold)
+#             bin_str = str(bin_size).replace('.', '_')
+#             var_name = f"bin{bin_str}_thresh_zero_df_spectra"
+        
+#             print(f"Creating {var_name}...")
+            
+#             try:
+#                 # Start with original data (no threshold filtering)
+#                 current_data = df_spectra_original.copy()
+            
+#                 # Binning only
+#                 binned_data = bin_spectra_by_mz_range(current_data, bin_size, indx_id_indx, startindx, stopindx)
+            
+#                 # Fill missing bins
+#                 filled_data = fill_missing_bins(binned_data, bin_size, indx_id_indx, startindx, stopindx)
+
+#                 # Remove duplicate columns before adding response data
+#                 preserve_cols = [filled_data.columns[0], filled_data.columns[indx_id_indx]]  # SMILES and index_id
+#                 filled_data_clean = remove_duplicate_columns(filled_data, preserve_cols)
+                
+#                 # Add response and log response values
+#                 final_data = add_response_and_log_response(filled_data_clean, df_original)
+                
+#                 # Ensure index_id is preserved from original data
+#                 if 'index_id' in df_spectra.columns:
+#                     final_data['index_id'] = df_spectra['index_id'].iloc[:len(final_data)].values
+                
+#                 # Final duplicate check before saving
+#                 final_duplicate_check = final_data.columns.duplicated().sum()
+#                 if final_duplicate_check > 0:
+#                     print(f"Warning: {final_duplicate_check} duplicates found in {var_name}, removing...")
+#                     final_data = final_data.loc[:, ~final_data.columns.duplicated()]
+                
+#                 # Store in created_datasets dictionary
+#                 created_datasets[var_name] = final_data
+                
+#                 # Save to file
+#                 save_path = f"{save_directory}/{var_name}.parquet"
+#                 final_data.to_parquet(save_path, index=False)
+#                 print(f"Saved {var_name} to {save_path} - Shape: {final_data.shape}")
+                
+#             except Exception as e:
+#                 print(f"Error creating {var_name}: {e}")
+#                 continue
+
+#     print(f"Created {len(bin_sizes)} thresh0 datasets!")
+#     print(f"Total datasets created: {len(created_datasets)}")
+    
+#     return created_datasets
 
 # # Old possible broken binning loop
 # def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory, indx_id_indx=-1, startindx=1, stopindx=-1):
