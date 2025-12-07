@@ -1198,6 +1198,207 @@ def train_model_condenc_full2(model, train_data, val_data, epochs, learning_rate
     wandb.finish()
     return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses
 
+
+
+# Conditional encoder with filtered Morgan fingerprints
+class Cond_Encoder_full_filtered(nn.Module):
+    def __init__(self, input_size, output_size, num_layers):
+        super().__init__()
+        layers = []
+        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
+        for i in range(num_layers):
+            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i < num_layers - 1:
+                layers.append(nn.LeakyReLU(inplace=True))
+        self.encoder = nn.Sequential(*layers)
+
+    def forward(self, x):
+        output = self.encoder(x)
+        
+        # Split the output into four parts
+        embedding_output = output[:, :512]    # ChemNet embeddings (no activation)
+        toxicity_raw = output[:, 512:513]     # Raw toxicity output (1 column)
+        morgan_output = output[:, 513:513+2048]  # Morgan fingerprints (2048 columns)
+        filtered_morgan_output = output[:, 513+2048:]  # Filtered Morgan fingerprints (remaining columns)
+        
+        # Apply scaled sigmoid only to toxicity part
+        toxicity_output = torch.sigmoid(toxicity_raw) * np.log(100000) 
+
+        # Concatenate back together
+        final_output = torch.cat([embedding_output, toxicity_output, morgan_output, filtered_morgan_output], dim=1)
+        
+        return final_output
+
+
+### Training function with filtered Morgan fingerprints
+def train_model_condenc_full2_filtered(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, criterion4,
+                                       lambda1, lambda2, lambda3, lambda4, device, config = chemnet_tox_morgan_config):
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    wandb.init(entity=config['wandb_entity'],
+               project=config['wandb_project'],
+               config=config) 
+               
+    # Initialize lists to store losses
+    train_losses = []
+    val_losses = []
+    
+    # Store individual loss components (after lambda weighting)
+    train_embedding_losses = []
+    train_toxicity_losses = []
+    train_morgan_losses = []
+    train_filtered_morgan_losses = []
+    val_embedding_losses = []
+    val_toxicity_losses = []
+    val_morgan_losses = []
+    val_filtered_morgan_losses = []
+
+    for epoch in range(epochs):
+        model.train()
+        running_loss = 0.0
+        running_embedding_loss = 0.0
+        running_toxicity_loss = 0.0
+        running_morgan_loss = 0.0
+        running_filtered_morgan_loss = 0.0
+        
+        # Modified: batch now includes group and collision energy information as part of input
+        for batch_with_ext, true_embeddings, true_log_tox, true_morgan, true_filtered_morgan, _ in train_data:
+            batch_with_ext = batch_with_ext.to(device)  # Input includes spectra + group encoding + collision energy encoding
+            true_embeddings = true_embeddings.to(device)
+            true_log_tox = true_log_tox.to(device)
+            true_morgan = true_morgan.to(device)
+            true_filtered_morgan = true_filtered_morgan.to(device)
+
+            optimizer.zero_grad()
+            batch_predicted_combined = model(batch_with_ext)  # Forward pass with external conditions info
+            
+            # Embedding Loss
+            batch_predicted_embeddings = batch_predicted_combined[:, :512] # First 512 columns
+            loss1 = criterion1(batch_predicted_embeddings, true_embeddings) # loss1 (embedding loss)
+            # Response Loss
+            batch_predicted_log_tox = batch_predicted_combined[:, 512:513] # 512th column
+            loss2 = criterion2(batch_predicted_log_tox, true_log_tox) # loss2 (toxicity loss)
+            # Morgan Loss
+            batch_predicted_morgan = batch_predicted_combined[:, 513:513+2048] # Next 2048 columns
+            loss3 = criterion3(batch_predicted_morgan, true_morgan) # loss3 (morgan loss)
+            # Filtered Morgan Loss
+            batch_predicted_filtered_morgan = batch_predicted_combined[:, 513+2048:] # Remaining columns
+            loss4 = criterion4(batch_predicted_filtered_morgan, true_filtered_morgan) # loss4 (filtered morgan loss)
+
+            # Apply lambda weighting
+            weighted_loss1 = lambda1 * loss1
+            weighted_loss2 = lambda2 * loss2
+            weighted_loss3 = lambda3 * loss3
+            weighted_loss4 = lambda4 * loss4
+            
+            # Total loss with modular weights (external conditions are NOT included in loss)
+            total_loss = weighted_loss1 + weighted_loss2 + weighted_loss3 + weighted_loss4
+
+            total_loss.backward()
+            optimizer.step()
+            
+            # Accumulate losses
+            running_loss += total_loss.item()
+            running_embedding_loss += weighted_loss1.item()
+            running_toxicity_loss += weighted_loss2.item()
+            running_morgan_loss += weighted_loss3.item()
+            running_filtered_morgan_loss += weighted_loss4.item()
+            
+        average_train_loss = running_loss / len(train_data)
+        average_train_embedding_loss = running_embedding_loss / len(train_data)
+        average_train_toxicity_loss = running_toxicity_loss / len(train_data)
+        average_train_morgan_loss = running_morgan_loss / len(train_data)
+        average_train_filtered_morgan_loss = running_filtered_morgan_loss / len(train_data)
+        wandb.log({"average_train_loss": average_train_loss})
+        wandb.log({"average_train_embedding_loss": average_train_embedding_loss})
+        wandb.log({"average_train_toxicity_loss": average_train_toxicity_loss})
+        wandb.log({"average_train_morgan_loss": average_train_morgan_loss})
+        wandb.log({"average_train_filtered_morgan_loss": average_train_filtered_morgan_loss})
+
+        model.eval()
+        val_loss = 0.0
+        val_embedding_loss = 0.0
+        val_toxicity_loss = 0.0
+        val_morgan_loss = 0.0
+        val_filtered_morgan_loss = 0.0
+        
+        with torch.no_grad():
+            # Modified: validation batch also includes group and collision energy information
+            for val_batch_with_ext, val_true_embeddings, val_true_tox, val_true_morgan, val_true_filtered_morgan, _ in val_data:
+                val_batch_with_ext = val_batch_with_ext.to(device)  # Input includes spectra + group encoding + collision energy encoding
+                val_true_embeddings = val_true_embeddings.to(device)
+                val_true_tox = val_true_tox.to(device)
+                val_true_morgan = val_true_morgan.to(device)
+                val_true_filtered_morgan = val_true_filtered_morgan.to(device)
+
+                val_batch_predicted = model(val_batch_with_ext)  # Forward pass with external conditions info
+                val_batch_predicted_embeddings = val_batch_predicted[:, :512]
+                val_batch_predicted_tox = val_batch_predicted[:, 512:513]
+                val_batch_predicted_morgan = val_batch_predicted[:, 513:513+2048]
+                val_batch_predicted_filtered_morgan = val_batch_predicted[:, 513+2048:]
+
+                # Calculate individual losses (external conditions are NOT included in loss calculation)
+                val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
+                val_loss2 = criterion2(val_batch_predicted_tox, val_true_tox)
+                val_loss3 = criterion3(val_batch_predicted_morgan, val_true_morgan)
+                val_loss4 = criterion4(val_batch_predicted_filtered_morgan, val_true_filtered_morgan)
+                
+                # Apply lambda weighting
+                val_weighted_loss1 = lambda1 * val_loss1
+                val_weighted_loss2 = lambda2 * val_loss2
+                val_weighted_loss3 = lambda3 * val_loss3
+                val_weighted_loss4 = lambda4 * val_loss4
+                
+                # Accumulate losses
+                val_loss += (val_weighted_loss1 + val_weighted_loss2 + val_weighted_loss3 + val_weighted_loss4).item()
+                val_embedding_loss += val_weighted_loss1.item()
+                val_toxicity_loss += val_weighted_loss2.item()
+                val_morgan_loss += val_weighted_loss3.item()
+                val_filtered_morgan_loss += val_weighted_loss4.item()
+                
+        average_val_loss = val_loss / len(val_data)
+        average_val_embedding_loss = val_embedding_loss / len(val_data)
+        average_val_toxicity_loss = val_toxicity_loss / len(val_data)
+        average_val_morgan_loss = val_morgan_loss / len(val_data)
+        average_val_filtered_morgan_loss = val_filtered_morgan_loss / len(val_data)
+        wandb.log({"average_val_loss": average_val_loss})
+        wandb.log({"average_val_embedding_loss": average_val_embedding_loss})
+        wandb.log({"average_val_toxicity_loss": average_val_toxicity_loss})
+        wandb.log({"average_val_morgan_loss": average_val_morgan_loss})
+        wandb.log({"average_val_filtered_morgan_loss": average_val_filtered_morgan_loss})
+
+        # Store losses for this epoch
+        train_losses.append(average_train_loss)
+        val_losses.append(average_val_loss)
+        train_embedding_losses.append(average_train_embedding_loss)
+        train_toxicity_losses.append(average_train_toxicity_loss)
+        train_morgan_losses.append(average_train_morgan_loss)
+        train_filtered_morgan_losses.append(average_train_filtered_morgan_loss)
+        val_embedding_losses.append(average_val_embedding_loss)
+        val_toxicity_losses.append(average_val_toxicity_loss)
+        val_morgan_losses.append(average_val_morgan_loss)
+        val_filtered_morgan_losses.append(average_val_filtered_morgan_loss)
+        
+        if epoch % 10 == 0 or epoch == epochs - 1:
+            print(f'Epoch [{epoch+1}/{epochs}]')
+            print(f'   Training loss: {average_train_loss:.6f}')
+            print(f'   Training embedding loss: {average_train_embedding_loss:.6f}')
+            print(f'   Training toxicity loss: {average_train_toxicity_loss:.6f}')
+            print(f'   Training morgan loss: {average_train_morgan_loss:.6f}')
+            print(f'   Training filtered morgan loss: {average_train_filtered_morgan_loss:.6f}')
+            print(f'   Validation loss: {average_val_loss:.6f}')
+            print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
+            print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
+            print(f'   Validation morgan loss: {average_val_morgan_loss:.6f}')
+            print(f'   Validation filtered morgan loss: {average_val_filtered_morgan_loss:.6f}')
+    wandb.finish()
+    return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, train_filtered_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses, val_filtered_morgan_losses
+
+
+
+
+
+
+
 ### ======================================================= FUNCTIONS ======================================================= ###
 
 def set_up_gpu():
@@ -2263,7 +2464,9 @@ def create_dataset_tensors_emb_tox(spectra_dataset, embedding_df, device, start_
     spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
 
     return embeddings_tensor, log_tox_tensor, spectra_tensor, spectra_indices_tensor 
-# ...existing code...
+
+
+
 def create_dataset_tensors_condenc_full2(spectra_dataset, embedding_df, morgan_df, device, start_idx=None, stop_idx=None):
     """
     Create tensors for the full conditional encoder WITH group and collision energy information.
@@ -2416,6 +2619,72 @@ def create_dataset_tensors_condenc_spec_chemnet_morgan(spectra_dataset, embeddin
     spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
 
     return spectra_tensor, embeddings_tensor, log_tox_tensor, morgan_tensor, spectra_indices_tensor
+
+
+
+def create_dataset_tensors_condenc_full2_filtered(spectra_dataset, embedding_df, morgan_df, filtered_morgan_df, device, start_idx=None, stop_idx=None):
+    """
+    Create tensors for the full conditional encoder WITH group and collision energy information and filtered Morgan fingerprints.
+    
+    Parameters:
+    ----------
+    spectra_dataset : pd.DataFrame
+        DataFrame containing spectral data and chemical labels with Group and CE_clean columns
+    embedding_df : pd.DataFrame
+        DataFrame containing ChemNet embeddings for chemicals
+    morgan_df : pd.DataFrame
+        DataFrame containing Morgan fingerprints for chemicals
+    filtered_morgan_df : pd.DataFrame
+        DataFrame containing filtered Morgan fingerprints for chemicals
+    device : torch.device
+        The device (CPU or GPU) on which to store the tensors
+    start_idx : int, optional
+        Start index for spectral columns
+    stop_idx : int, optional
+        Stop index for spectral columns
+    
+    Returns:
+    -------
+    tuple
+        A tuple containing:
+        - spectra_with_ext_tensor (torch.Tensor): Tensor of spectral data concatenated with one-hot encoded group and collision energy
+        - embeddings_tensor (torch.Tensor): Tensor of true ChemNet embeddings
+        - log_tox_tensor (torch.Tensor): Tensor of log toxicity values
+        - morgan_tensor (torch.Tensor): Tensor of Morgan fingerprints
+        - filtered_morgan_tensor (torch.Tensor): Tensor of filtered Morgan fingerprints
+        - spectra_indices_tensor (torch.Tensor): Tensor of indices
+    """
+    # Extract spectral data
+    spectra = spectra_dataset.iloc[:, start_idx:stop_idx]
+    
+    # One-hot encode the Group column
+    group_encoded = pd.get_dummies(spectra_dataset['Group'], prefix='group', dtype=int)
+    
+    # One-hot encode the CE_clean column
+    ce_encoded = pd.get_dummies(spectra_dataset['CE_clean'], prefix='ce', dtype=int)
+    
+    # Alternative: Numerical encoding for CE_clean (commented out)
+    # ce_mapping = {'NAN': 0, 'low': 5, 'med': 10, 'high': 15}
+    # ce_numerical = spectra_dataset['CE_clean'].map(ce_mapping).values.reshape(-1, 1)
+    # ce_encoded = pd.DataFrame(ce_numerical, columns=['ce_numerical'], index=spectra_dataset.index)
+
+    # Concatenate spectra with group and collision energy encoding
+    spectra_with_ext = pd.concat([spectra, group_encoded, ce_encoded], axis=1)
+   
+    # Create chemical labels list
+    chem_labels = list(spectra_dataset['SMILES_spectra'])
+    
+    # Create tensors
+    spectra_with_ext_tensor = torch.Tensor(spectra_with_ext.values).to(device)
+    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
+    morgan_tensor = torch.Tensor([morgan_df.loc[morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    filtered_morgan_tensor = torch.Tensor([filtered_morgan_df.loc[filtered_morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
+
+    return spectra_with_ext_tensor, embeddings_tensor, log_tox_tensor, morgan_tensor, filtered_morgan_tensor, spectra_indices_tensor
+
+    
 ### =========================================== PLOTTING TRAINING CURVES FUNCTIONS =========================================== ###
 
 import matplotlib.pyplot as plt
