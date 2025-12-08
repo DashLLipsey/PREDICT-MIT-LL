@@ -84,9 +84,9 @@ cond_encoder_results = []
 # 512 (ChemNet) + 1 (Toxicity) + 2048 (Morgan) + filtered_morgan_bits = output_size
 # We'll determine the exact size dynamically from the data
 output_size = None  # Will be set dynamically based on data
-num_layers = 8
+num_layers = 5
 batch_size = 256
-epochs = 300
+epochs = 800
 lr = 0.0001
 lambda1 = 3
 lambda2 = 15
@@ -120,9 +120,16 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 # Get all dataset files from the grid search folder
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
+# Allow all bin sizes and thresholds
+allowed_bin_prefixes = [ 'bin1_', 'bin2_', 'bin5_', 'bin10_',
+                        'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_', 'bin1000_'] #'bin0_5_',
+allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
+                             'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
+                             'thresh50', 'thresh100']
+
 # Allow only range of interest as given by Rod/Sasha
-allowed_bin_prefixes = [ 'bin0_5_','bin1_', 'bin2_'] # 'bin0_5_',
-allowed_threshold_suffixes = ['thresh0_01', 'thresh0_05','thresh0_1'] # 'thresh0_05',
+# allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_'] # 'bin0_5_',
+# allowed_threshold_suffixes = ['thresh0_01', 'thresh0_05', 'thresh0_1'] # 'thresh0_05',
 
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
@@ -264,9 +271,6 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             'Bin': bin_size,
             'Threshold': threshold,
             'super_test_removed': True,
-            'super_test_smiles_count': len(super_test_smiles),
-            'regular_morgan_bits': regular_morgan_bits,
-            'filtered_morgan_bits': filtered_morgan_bits
         }
         
         # Train conditional encoder using the new filtered training function
@@ -316,6 +320,55 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         test_median_percent_error = 100 * np.median(np.abs(test_response_pred - test_response_true) / test_response_true)
         train_mean_percent_error = 100 * np.mean(np.abs(train_response_pred - train_response_true) / train_response_true)
         test_mean_percent_error = 100 * np.mean(np.abs(test_response_pred - test_response_true) / test_response_true)
+        
+        # ==================== SAVE REGULAR TEST SET OUTPUTS ==================== #
+        # Create regular test output DataFrame with new structure (ChemNet + Toxicity + Morgan + Filtered Morgan) + metadata
+        emb_cols = [f'cond_emb_{j}' for j in range(512)]  # ChemNet embedding dimensions
+        morgan_cols = [f'cond_morgan_{j}' for j in range(regular_morgan_bits)]  # Morgan fingerprint dimensions
+        filtered_morgan_cols = [f'cond_filtered_morgan_{j}' for j in range(filtered_morgan_bits)]  # Filtered Morgan fingerprint dimensions
+        
+        regular_test_output_df = pd.DataFrame(test_predictions[:, :512], columns=emb_cols)
+        regular_test_output_df['cond_tox_pred'] = test_predictions[:, 512]  # Toxicity prediction
+        
+        # Add Morgan fingerprint predictions
+        morgan_start_idx = 513
+        morgan_end_idx = morgan_start_idx + regular_morgan_bits
+        regular_test_morgan_pred_df = pd.DataFrame(test_predictions[:, morgan_start_idx:morgan_end_idx], columns=morgan_cols)
+        regular_test_output_df = pd.concat([regular_test_output_df, regular_test_morgan_pred_df], axis=1)
+        
+        # Add Filtered Morgan fingerprint predictions  
+        filtered_morgan_start_idx = morgan_end_idx
+        regular_test_filtered_morgan_pred_df = pd.DataFrame(test_predictions[:, filtered_morgan_start_idx:], columns=filtered_morgan_cols)
+        regular_test_output_df = pd.concat([regular_test_output_df, regular_test_filtered_morgan_pred_df], axis=1)
+        
+        # Add metadata
+        regular_test_output_df['SMILES_spectra'] = test_data_processed['SMILES_spectra'].values
+        regular_test_output_df['Response'] = test_data_processed['Response'].values
+        regular_test_output_df['log_response'] = test_data_processed['log_response'].values
+        regular_test_output_df['index_id'] = test_data_processed['index'].values
+        
+        # Save regular test set predictions
+        if 'thresh_zero' in dataset_name:
+            bin_part = dataset_name.split('_thresh_zero')[0]  # Keep bin0_1 format
+            threshold_part = "thresh_zero"
+        else:
+            parts = dataset_name.split('_thresh')
+            bin_part = parts[0]  # Keep bin0_1 format
+            
+            thresh_part = parts[1].split('_df_spectra')[0]
+            threshold_part = f"thresh{thresh_part}"  # Keep thresh0_001 format
+        
+        regular_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/current_cond_enc_reg_outputs"
+        os.makedirs(regular_test_output_folder, exist_ok=True)
+
+        regular_test_predictions_filename = f"cond_enc_filtered_{bin_part}_{threshold_part}_df_spectra.parquet"
+        regular_test_predictions_path = os.path.join(regular_test_output_folder, regular_test_predictions_filename)
+        
+        try:
+            regular_test_output_df.to_parquet(regular_test_predictions_path, index=False)
+            print(f"✓ Successfully saved regular test predictions to {regular_test_predictions_filename}")
+        except Exception as save_error:
+            print(f"✗ ERROR saving regular test predictions: {str(save_error)}")
         
         # ==================== SUPER TEST SET EVALUATION ==================== #
         # Extract super test set from original dataset
@@ -542,7 +595,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         
         # Save super test set predictions if they exist
         if super_test_output_df is not None:
-            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/super_test_sets_df6"
+            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/current_cond_enc_supertest_outputs"
             os.makedirs(super_test_output_folder, exist_ok=True)
 
             super_test_predictions_filename = f"super_test_cond_enc_filtered_{bin_part}_{threshold_part}_df_spectra.parquet"
