@@ -1295,7 +1295,7 @@ def create_dataset_tensors_tox_spec(spectra_dataset,device, start_idx=None, stop
 
     return log_tox_tensor, spectra_tensor, spectra_indices_tensor
 
-def create_dataset_tensors_emb_tox(spectra_dataset, embedding_df, device, start_idx=None, stop_idx=None):
+def create_dataset_tensors_12(spectra_dataset, embedding_df, device, start_idx=None, stop_idx=None):
 
     spectra = spectra_dataset.iloc[:,start_idx:stop_idx] # prev was [1,-3]
 
