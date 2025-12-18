@@ -121,7 +121,7 @@ val_loader_enc = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 input_size = len(spectra_cols)
 
 # Create ChemNet encoder using the updated architecture
-chemnet_encoder = fd.ChemNet_Encoder(input_size=input_size, output_size=output_size, num_layers=num_layers).to(device)
+chemnet_encoder = fd.base_Encoder(input_size=input_size, output_size=output_size, num_layers=num_layers).to(device)
 
 # Use MSELoss for continuous embeddings
 criterion = nn.MSELoss()

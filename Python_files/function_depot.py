@@ -66,15 +66,9 @@ chemnet_tox_morgan_config = {
 
 ### ======================================================= ENCODERS ======================================================= ###
 #%%
-# ChemNet Encoder
-# batch_size = __
-# epochs= __
-# lr= 0.0001
-# criterion = nn.MSELoss()
-# output_size = 512
-# num_layers = __
 
-class ChemNet_Encoder(nn.Module):
+# This encoder sturucture is used for almost all of my encoders below until we get to the conditional ones
+class base_Encoder(nn.Module):
     def __init__(self, input_size, output_size, num_layers):
         super().__init__()
         layers = []
@@ -87,6 +81,16 @@ class ChemNet_Encoder(nn.Module):
 
     def forward(self, x):
         return self.encoder(x)
+
+
+
+# ChemNet Encoder
+# batch_size = __
+# epochs= __
+# lr= 0.0001
+# criterion = nn.MSELoss()
+# output_size = 512
+# num_layers = __
 
 def train_model_chemnet_encoder(model, train_data, val_data, epochs, learning_rate, criterion, device, config = chemnet_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -150,23 +154,6 @@ criterion = nn.MSELoss()
 # IMPORTANT NOTE: Morgan fingerprints are typically binary vectors (0s and 1s). So the normal 
 # method of using MSELoss may not be the best choice. Consider using BCEWithLogitsLoss or BCELoss
 
-# # New structure with sigmoid in the final layer, and just BCELoss
-class Morgan_fp_Encoder(nn.Module):
-    def __init__(self, input_size, output_size, num_layers):
-        super().__init__()
-        layers = []
-        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-        for i in range(num_layers):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-            if i < num_layers - 1:
-                layers.append(nn.LeakyReLU(inplace=True))
-        self.encoder = nn.Sequential(*layers)
-
-    def forward(self, x):
-        output = self.encoder(x)  
-        # probs = torch.sigmoid(output)  
-        return output
-
 def train_model_morgan_fp_encoder(model, train_data, val_data, epochs, learning_rate, criterion, device, config = morganfp_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     wandb.init(entity=config['wandb_entity'],
@@ -226,20 +213,6 @@ def train_model_morgan_fp_encoder(model, train_data, val_data, epochs, learning_
 # output_size = 1
 # num_layers = __
 
-class SpecToxMLP_Reg(nn.Module):
-    def __init__(self, input_size, output_size, num_layers):
-        super().__init__()
-        layers = []
-        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-        for i in range(num_layers):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-            if i < num_layers - 1:
-                layers.append(nn.LeakyReLU(inplace=True))
-        self.encoder = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.encoder(x)
-
 def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, criterion, device, config = spectra_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     wandb.init(entity=config['wandb_entity'],
@@ -291,20 +264,6 @@ def train_model_MLP_spectra(model, train_data, val_data, epochs, learning_rate, 
 
 
 # GENERAL TOXICITY MLP
-class ToxMLP_Reg(nn.Module):
-    def __init__(self, input_size, output_size, num_layers):
-        super().__init__()
-        layers = []
-        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-        for i in range(num_layers):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-            if i < num_layers - 1:
-                layers.append(nn.LeakyReLU(inplace=True))
-        self.encoder = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.encoder(x)
-
 def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterion, device, config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     wandb.init(entity=config['wandb_entity'],
@@ -354,78 +313,6 @@ def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterio
     wandb.finish()
     return model, train_losses, val_losses
 
-#%%
-# ChemNet MLP
-# batch_size = __
-# epochs = __
-# lr = 0.0001
-# criterion = nn.MSELoss()
-# output_size = 1
-# num_layers = __
-
-class ToxMLP(nn.Module):
-    def __init__(self, input_size, output_size, num_layers):
-        super().__init__()
-        layers = []
-        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-        for i in range(num_layers):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-            if i < num_layers - 1:
-                layers.append(nn.LeakyReLU(inplace=True))
-        self.encoder = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.encoder(x)
-
-def train_model_MLP(model, train_data, val_data, epochs, learning_rate, criterion, device, config = chemnet_mlp_config):
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    wandb.init(entity=config['wandb_entity'],
-               project=config['wandb_project'],
-               config=config) 
-    # Initialize lists to store losses
-    train_losses = []
-    val_losses = []
-
-    for epoch in range(epochs):
-        model.train()
-        running_loss = 0.0
-        for batch, true_log_tox, _ in train_data:
-            batch = batch.to(device)
-            true_log_tox = true_log_tox.to(device)
-
-            optimizer.zero_grad()
-            batch_predicted_log_tox = model(batch)
-            loss = criterion(batch_predicted_log_tox, true_log_tox)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-        average_train_loss = running_loss / len(train_data)
-        wandb.log({"average_train_loss": average_train_loss})
-
-        model.eval()
-        val_loss = 0.0
-        with torch.no_grad():
-            for val_batch, val_true_tox, _ in val_data:
-                val_batch = val_batch.to(device)
-                val_true_tox = val_true_tox.to(device)
-
-                val_batch_predicted_tox = model(val_batch)
-
-                val_batch_loss = criterion(val_batch_predicted_tox, val_true_tox)
-                val_loss += val_batch_loss.item()
-        average_val_loss = val_loss / len(val_data)
-        wandb.log({"average_val_loss": average_val_loss})
-
-        # Store losses for this epoch
-        train_losses.append(average_train_loss)
-        val_losses.append(average_val_loss)
-        if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
-            print(f'Epoch [{epoch+1}/{epochs}]')
-            print(f'   Training loss: {average_train_loss:.6f}')
-            print(f'   Validation loss: {average_val_loss:.6f}')
-    wandb.finish()
-    return model, train_losses, val_losses
-
 # Conditional encoder (ChemNet + Toxicity) 
 # batch_size = __
 # epochs = __
@@ -438,7 +325,7 @@ lambda1 = 1
 lambda2 = 5
 
 # Smaller conditional encoder architecture
-class Cond_Encoder_chemnet_tox(nn.Module):
+class Cond_Encoder_12(nn.Module): # From Cond_Encoder_chemnet_tox
     def __init__(self, input_size, output_size, num_layers):
         super().__init__()
         self.max_tox_value = np.log(10000)  # Maximum value for sigmoid scaling
@@ -466,7 +353,8 @@ class Cond_Encoder_chemnet_tox(nn.Module):
         
         return final_output
 
-def train_model_condenc_chemnet_tox(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, 
+# From train_model_condenc_chemnet_tox
+def train_model_12(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, 
                                     lambda1, lambda2, device, config = chemnet_tox_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     wandb.init(entity=config['wandb_entity'],
@@ -581,62 +469,8 @@ def train_model_condenc_chemnet_tox(model, train_data, val_data, epochs, learnin
 
 #%%
 # Conditional encoder (ChemNet + Toxicity + Morgan Fingerprints) 
-# batch_size = __
-# epochs = __
-# lr = 0.0001
-# criterion1 = nn.MSELoss()
-# criterion2 = nn.MSELoss()
-# criterion3 = nn.MSELoss()
-# output_size = 2561
-# num_layers = __
-lambda1 = 1
-lambda2 = 5
-lambda3 = 1
-
-# Conditional Encoder architecture
-class Cond_Encoder_chemnet_tox_morgan(nn.Module):
-    def __init__(self, input_size, output_size, num_layers, max_tox_value=10.0):
-        super().__init__()
-        self.max_tox_value = max_tox_value  # Maximum value for sigmoid scaling
-        
-        layers = []
-        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-        for i in range(num_layers):
-            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-            if i < num_layers - 1:
-                layers.append(nn.LeakyReLU(inplace=True))
-        self.encoder = nn.Sequential(*layers)
-
-    def forward(self, x):
-        output = self.encoder(x)
-        
-        # Split the output into three parts
-        embedding_output = output[:, :512]    # ChemNet embeddings (no activation)
-        toxicity_raw = output[:, 512:513]     # Raw toxicity output (1 column)
-        morgan_output = output[:, 513:]       # Morgan fingerprints (no activation)
-        
-        # Apply scaled sigmoid only to toxicity part
-        toxicity_output = torch.sigmoid(toxicity_raw) * self.max_tox_value
-        
-        # Concatenate back together
-        final_output = torch.cat([embedding_output, toxicity_output, morgan_output], dim=1)
-        
-        return final_output
-# class Cond_Encoder_chemnet_tox_morgan(nn.Module):
-#     def __init__(self, input_size, output_size, num_layers):
-#         super().__init__()
-#         layers = []
-#         layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-#         for i in range(num_layers):
-#             layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-#             if i < num_layers - 1:
-#                 layers.append(nn.LeakyReLU(inplace=True))
-#         self.encoder = nn.Sequential(*layers)
-
-#     def forward(self, x):
-#         return self.encoder(x)
-
-def train_model_condenc_chemnet_tox_morgan(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, 
+# From train_model_condenc_chemnet_tox_morgan
+def train_model_condenc_123(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, 
                                            lambda1, lambda2, lambda3, device, config = chemnet_tox_morgan_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     wandb.init(entity=config['wandb_entity'],
@@ -844,54 +678,54 @@ def inv_affine_trans_sig(Fz, target_min, target_max, IS):
     z = alpha * (Fz) + beta
     return z
 
-# # Conditional Encoder architecture
-# class Cond_Encoder_full(nn.Module):
-#     def __init__(self, input_size, output_size, num_layers):
-#         super().__init__()
+# Conditional Encoder architecture
+class Cond_Encoder_123_affine(nn.Module): # From Cond_encoder_full
+    def __init__(self, input_size, output_size, num_layers):
+        super().__init__()
         
-#         layers = []
-#         layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
-#         for i in range(num_layers):
-#             layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-#             if i < num_layers - 1:
-#                 layers.append(nn.LeakyReLU(inplace=True))
-#         self.encoder = nn.Sequential(*layers)
+        layers = []
+        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
+        for i in range(num_layers):
+            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i < num_layers - 1:
+                layers.append(nn.LeakyReLU(inplace=True))
+        self.encoder = nn.Sequential(*layers)
 
-#     def forward(self, x):
+    def forward(self, x):
 
-#         output = self.encoder(x)
+        output = self.encoder(x)
         
-#         # Split the output into three parts
-#         embedding_output = output[:, :512]    # ChemNet embeddings
-#         toxicity_raw = output[:, 512:513]     # Raw toxicity output (1 column)
-#         morgan_output = output[:, 513:]       # Morgan fingerprints
+        # Split the output into three parts
+        embedding_output = output[:, :512]    # ChemNet embeddings
+        toxicity_raw = output[:, 512:513]     # Raw toxicity output (1 column)
+        morgan_output = output[:, 513:]       # Morgan fingerprints
         
-#         # Apply sigmoid activation to each part with their appropriate ranges
+        # Apply sigmoid activation to each part with their appropriate ranges
         
-#         # Embedding processing (range: -1 to 1)
-#         embedding_transformed = affine_trans_sig(embedding_output, -2, 2, (-0.5, 0.5))
-#         embedding_sigmoid = torch.sigmoid(4 * (embedding_transformed)) - 0.5
-#         embedding_final = inv_affine_trans_sig(embedding_sigmoid, -2, 2, (-0.5, 0.5))
+        # Embedding processing (range: -1 to 1)
+        embedding_transformed = affine_trans_sig(embedding_output, -2, 2, (-0.5, 0.5))
+        embedding_sigmoid = torch.sigmoid(4 * (embedding_transformed)) - 0.5
+        embedding_final = inv_affine_trans_sig(embedding_sigmoid, -2, 2, (-0.5, 0.5))
         
-#         # Toxicity processing (range: 0 to log(max_tox))
-#         toxicity_transformed = affine_trans_sig(toxicity_raw, -10.0, np.log(100000), (-0.5, 0.5)) # np.log(100000), np.log(46965.46394)
-#         toxicity_sigmoid = torch.sigmoid(4 * (toxicity_transformed))  - 0.5
-#         toxicity_final = inv_affine_trans_sig(toxicity_sigmoid, -10.0, np.log(100000), (-0.5, 0.5))
+        # Toxicity processing (range: 0 to log(max_tox))
+        toxicity_transformed = affine_trans_sig(toxicity_raw, -10.0, np.log(100000), (-0.5, 0.5)) # np.log(100000), np.log(46965.46394)
+        toxicity_sigmoid = torch.sigmoid(4 * (toxicity_transformed))  - 0.5
+        toxicity_final = inv_affine_trans_sig(toxicity_sigmoid, -10.0, np.log(100000), (-0.5, 0.5))
 
-#         # Morgan processing (range: 0 to 1)
-#         morgan_transformed = affine_trans_sig(morgan_output, 0, 1.0, (-0.2, 0.2))
-#         morgan_sigmoid = torch.sigmoid(4 * (morgan_transformed)) - 0.5
-#         morgan_final = inv_affine_trans_sig(morgan_sigmoid, 0, 1.0, (-0.2, 0.2))
+        # Morgan processing (range: 0 to 1)
+        morgan_transformed = affine_trans_sig(morgan_output, 0, 1.0, (-0.2, 0.2))
+        morgan_sigmoid = torch.sigmoid(4 * (morgan_transformed)) - 0.5
+        morgan_final = inv_affine_trans_sig(morgan_sigmoid, 0, 1.0, (-0.2, 0.2))
         
-#         # Concatenate back together
-#         final_output = torch.cat([embedding_final, toxicity_final, morgan_final], dim=1)
-#         # final_output = torch.cat([embedding_output, toxicity_final, morgan_output], dim=1)
+        # Concatenate back together
+        final_output = torch.cat([embedding_final, toxicity_final, morgan_final], dim=1)
+        # final_output = torch.cat([embedding_output, toxicity_final, morgan_output], dim=1)
 
-#         return final_output
+        return final_output
 
 
  # Here are the older versions without the affine transforms but one with the tox bound    
-class Cond_Encoder_full(nn.Module):
+class Cond_Encoder_123(nn.Module): # From Cond_Encoder_full
     def __init__(self, input_size, output_size, num_layers):
         super().__init__()
         layers = []
@@ -920,7 +754,7 @@ class Cond_Encoder_full(nn.Module):
         
         return final_output
 
-def train_model_condenc_full(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, 
+def train_model_condenc_123e1(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, 
                                            lambda1, lambda2, lambda3, device, config = chemnet_tox_morgan_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     wandb.init(entity=config['wandb_entity'],
@@ -1060,7 +894,7 @@ def train_model_condenc_full(model, train_data, val_data, epochs, learning_rate,
 #%%
 
 ### Additional condition: collision energy
-def train_model_condenc_full2(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, 
+def train_model_condenc_123e1e2(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, 
                                            lambda1, lambda2, lambda3, device, config = chemnet_tox_morgan_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     wandb.init(entity=config['wandb_entity'],
@@ -1201,7 +1035,7 @@ def train_model_condenc_full2(model, train_data, val_data, epochs, learning_rate
 
 
 # Conditional encoder with filtered Morgan fingerprints
-class Cond_Encoder_full_filtered(nn.Module):
+class Cond_Encoder_1234(nn.Module):
     def __init__(self, input_size, output_size, num_layers):
         super().__init__()
         layers = []
@@ -1231,7 +1065,7 @@ class Cond_Encoder_full_filtered(nn.Module):
 
 
 ### Training function with filtered Morgan fingerprints
-def train_model_condenc_full2_filtered(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, criterion4,
+def train_model_condenc_1234e1e2(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, criterion4,
                                        lambda1, lambda2, lambda3, lambda4, device, config = chemnet_tox_morgan_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     wandb.init(entity=config['wandb_entity'],
@@ -1393,7 +1227,306 @@ def train_model_condenc_full2_filtered(model, train_data, val_data, epochs, lear
     wandb.finish()
     return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, train_filtered_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses, val_filtered_morgan_losses
 
+### =============================================== TENSORS CREATION FUNCTIONS =============================================== ###
 
+# This is our default function, the one we use to prep the data for the encoder that takes us from spectra to ChemNet encodings 
+def create_dataset_tensors_1(spectra_dataset, embedding_df, device, start_idx=None, stop_idx=None):
+    """
+    Create tensors from the provided spectra dataset and embedding DataFrame.
+
+    Parameters:
+    ----------
+    spectra_dataset : pd.DataFrame
+        DataFrame containing spectral data and chemical labels. Assumes specific 
+        columns for processing based on the `carl` flag.
+
+    embedding_df : pd.DataFrame
+        DataFrame containing embeddings for chemicals, with 'Embedding Floats' 
+        column corresponding to ChemNet embeddings.
+
+    device : torch.device
+        The device (CPU or GPU) on which to store the tensors.
+
+    carl : bool, optional
+        If True, processes the dataset assuming it has a different structure 
+        (specifically without an 'Unnamed: 0' column). Default is False.
+
+    Returns:
+    -------
+    tuple
+        A tuple containing:
+        - embeddings_tensor (torch.Tensor): Tensor of true embeddings for the chemicals.
+        - spectra_tensor (torch.Tensor): Tensor of spectral data.
+        - chem_encodings_tensor (torch.Tensor): Tensor of chemical name encodings.
+        - spectra_indices_tensor (torch.Tensor): Tensor of indices corresponding to the spectra.
+    """
+    spectra = spectra_dataset.iloc[:,start_idx:stop_idx]
+
+    # create tensors of spectra, true embeddings, and spectra indices
+    chem_labels = list(spectra_dataset['SMILES_spectra'])
+    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    spectra_tensor = torch.Tensor(spectra.values).to(device)
+    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
+
+    return embeddings_tensor, spectra_tensor, spectra_indices_tensor
+
+def create_dataset_tensors_tox(spectra_dataset,device, start_idx=None, stop_idx=None):
+
+    spectra = spectra_dataset.iloc[:,start_idx:stop_idx] # Prev was [1, -4]
+
+    # create tensors of spectra, true toxicity values, and chemical name encodings for train and val
+    #chem_labels = list(spectra_dataset['SMILES_spectra'])
+    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
+    spectra_tensor = torch.Tensor(spectra.values).to(device)
+    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
+
+    return log_tox_tensor, spectra_tensor, spectra_indices_tensor
+
+def create_dataset_tensors_tox_spec(spectra_dataset,device, start_idx=None, stop_idx=None):
+
+    embedding_cols = [col for col in spectra_dataset.columns if col.startswith('Embedding Float')]
+    spectra = spectra_dataset[embedding_cols]
+
+    # create tensors of spectra, true toxicity values, and chemical name encodings for train and val
+    #chem_labels = list(spectra_dataset['SMILES_spectra'])
+    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
+    spectra_tensor = torch.Tensor(spectra.values).to(device)
+    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
+
+    return log_tox_tensor, spectra_tensor, spectra_indices_tensor
+
+def create_dataset_tensors_emb_tox(spectra_dataset, embedding_df, device, start_idx=None, stop_idx=None):
+
+    spectra = spectra_dataset.iloc[:,start_idx:stop_idx] # prev was [1,-3]
+
+    # create tensors of spectra, true embeddings, true toxicity values, and chemical name encodings for train and val
+    chem_labels = list(spectra_dataset['SMILES_spectra'])
+    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
+    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    spectra_tensor = torch.Tensor(spectra.values).to(device)
+    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
+
+    return embeddings_tensor, log_tox_tensor, spectra_tensor, spectra_indices_tensor 
+
+
+def create_dataset_tensors_condenc_123e1(spectra_dataset, embedding_df, morgan_df, device, start_idx=None, stop_idx=None):
+    """
+    Create tensors for the full conditional encoder WITH group information.
+    
+    Parameters:
+    ----------
+    spectra_dataset : pd.DataFrame
+        DataFrame containing spectral data and chemical labels with Group column
+    embedding_df : pd.DataFrame
+        DataFrame containing ChemNet embeddings for chemicals
+    morgan_df : pd.DataFrame
+        DataFrame containing Morgan fingerprints for chemicals
+    device : torch.device
+        The device (CPU or GPU) on which to store the tensors
+    start_idx : int, optional
+        Start index for spectral columns
+    stop_idx : int, optional
+        Stop index for spectral columns
+    
+    Returns:
+    -------
+    tuple
+        A tuple containing:
+        - spectra_with_group_tensor (torch.Tensor): Tensor of spectral data concatenated with one-hot encoded group
+        - embeddings_tensor (torch.Tensor): Tensor of true ChemNet embeddings
+        - log_tox_tensor (torch.Tensor): Tensor of log toxicity values
+        - morgan_tensor (torch.Tensor): Tensor of Morgan fingerprints
+        - spectra_indices_tensor (torch.Tensor): Tensor of indices
+    """
+    # Extract spectral data
+    spectra = spectra_dataset.iloc[:, start_idx:stop_idx]
+    
+    # One-hot encode the Group column
+    group_encoded = pd.get_dummies(spectra_dataset['Group'], prefix='group', dtype=int)
+
+    # Concatenate spectra with group encoding
+    spectra_with_group = pd.concat([spectra, group_encoded], axis=1)
+
+    # Create chemical labels list
+    chem_labels = list(spectra_dataset['SMILES_spectra'])
+    
+    # Create tensors
+    spectra_with_group_tensor = torch.Tensor(spectra_with_group.values).to(device)
+    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
+    morgan_tensor = torch.Tensor([morgan_df.loc[morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
+
+    return spectra_with_group_tensor, embeddings_tensor, log_tox_tensor, morgan_tensor, spectra_indices_tensor
+
+
+
+def create_dataset_tensors_condenc_123e1e2(spectra_dataset, embedding_df, morgan_df, device, start_idx=None, stop_idx=None):
+    """
+    Create tensors for the full conditional encoder WITH group and collision energy information.
+    
+    Parameters:
+    ----------
+    spectra_dataset : pd.DataFrame
+        DataFrame containing spectral data and chemical labels with Group and CE_clean columns
+    embedding_df : pd.DataFrame
+        DataFrame containing ChemNet embeddings for chemicals
+    morgan_df : pd.DataFrame
+        DataFrame containing Morgan fingerprints for chemicals
+    device : torch.device
+        The device (CPU or GPU) on which to store the tensors
+    start_idx : int, optional
+        Start index for spectral columns
+    stop_idx : int, optional
+        Stop index for spectral columns
+    
+    Returns:
+    -------
+    tuple
+        A tuple containing:
+        - spectra_with_ext_tensor (torch.Tensor): Tensor of spectral data concatenated with one-hot encoded group and collision energy
+        - embeddings_tensor (torch.Tensor): Tensor of true ChemNet embeddings
+        - log_tox_tensor (torch.Tensor): Tensor of log toxicity values
+        - morgan_tensor (torch.Tensor): Tensor of Morgan fingerprints
+        - spectra_indices_tensor (torch.Tensor): Tensor of indices
+    """
+    # Extract spectral data
+    spectra = spectra_dataset.iloc[:, start_idx:stop_idx]
+    
+    # One-hot encode the Group column
+    group_encoded = pd.get_dummies(spectra_dataset['Group'], prefix='group', dtype=int)
+    
+    # One-hot encode the CE_clean column
+    ce_encoded = pd.get_dummies(spectra_dataset['CE_clean'], prefix='ce', dtype=int)
+    
+    # Alternative: Numerical encoding for CE_clean (commented out)
+    # ce_mapping = {'NAN': 0, 'low': 5, 'med': 10, 'high': 15}
+    # ce_numerical = spectra_dataset['CE_clean'].map(ce_mapping).values.reshape(-1, 1)
+    # ce_encoded = pd.DataFrame(ce_numerical, columns=['ce_numerical'], index=spectra_dataset.index)
+
+    # Concatenate spectra with group and collision energy encoding
+    spectra_with_ext = pd.concat([spectra, group_encoded, ce_encoded], axis=1)
+   
+    # Create chemical labels list
+    chem_labels = list(spectra_dataset['SMILES_spectra'])
+    
+    # Create tensors
+    spectra_with_ext_tensor = torch.Tensor(spectra_with_ext.values).to(device)
+    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
+    morgan_tensor = torch.Tensor([morgan_df.loc[morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
+
+    return spectra_with_ext_tensor, embeddings_tensor, log_tox_tensor, morgan_tensor, spectra_indices_tensor
+
+
+def create_dataset_tensors_123(spectra_dataset, embedding_df, morgan_df, device, start_idx=None, stop_idx=None):
+    """
+    Create tensors for the conditional encoder WITHOUT group information.
+    
+    Parameters:
+    ----------
+    spectra_dataset : pd.DataFrame
+        DataFrame containing spectral data and chemical labels
+    embedding_df : pd.DataFrame
+        DataFrame containing ChemNet embeddings for chemicals
+    morgan_df : pd.DataFrame
+        DataFrame containing Morgan fingerprints for chemicals
+    device : torch.device
+        The device (CPU or GPU) on which to store the tensors
+    start_idx : int, optional
+        Start index for spectral columns
+    stop_idx : int, optional
+        Stop index for spectral columns
+    
+    Returns:
+    -------
+    tuple
+        A tuple containing:
+        - spectra_tensor (torch.Tensor): Tensor of spectral data only
+        - embeddings_tensor (torch.Tensor): Tensor of true ChemNet embeddings
+        - log_tox_tensor (torch.Tensor): Tensor of log toxicity values
+        - morgan_tensor (torch.Tensor): Tensor of Morgan fingerprints
+        - spectra_indices_tensor (torch.Tensor): Tensor of indices
+    """
+    # Extract spectral data (no group encoding)
+    spectra = spectra_dataset.iloc[:, start_idx:stop_idx]
+    
+    # Create chemical labels list
+    chem_labels = list(spectra_dataset['SMILES_spectra'])
+    
+    # Create tensors
+    spectra_tensor = torch.Tensor(spectra.values).to(device)
+    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
+    morgan_tensor = torch.Tensor([morgan_df.loc[morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
+
+    return spectra_tensor, embeddings_tensor, log_tox_tensor, morgan_tensor, spectra_indices_tensor
+
+
+
+def create_dataset_tensors_condenc_1234e1e2(spectra_dataset, embedding_df, morgan_df, filtered_morgan_df, device, start_idx=None, stop_idx=None):
+    """
+    Create tensors for the full conditional encoder WITH group and collision energy information and filtered Morgan fingerprints.
+    
+    Parameters:
+    ----------
+    spectra_dataset : pd.DataFrame
+        DataFrame containing spectral data and chemical labels with Group and CE_clean columns
+    embedding_df : pd.DataFrame
+        DataFrame containing ChemNet embeddings for chemicals
+    morgan_df : pd.DataFrame
+        DataFrame containing Morgan fingerprints for chemicals
+    filtered_morgan_df : pd.DataFrame
+        DataFrame containing filtered Morgan fingerprints for chemicals
+    device : torch.device
+        The device (CPU or GPU) on which to store the tensors
+    start_idx : int, optional
+        Start index for spectral columns
+    stop_idx : int, optional
+        Stop index for spectral columns
+    
+    Returns:
+    -------
+    tuple
+        A tuple containing:
+        - spectra_with_ext_tensor (torch.Tensor): Tensor of spectral data concatenated with one-hot encoded group and collision energy
+        - embeddings_tensor (torch.Tensor): Tensor of true ChemNet embeddings
+        - log_tox_tensor (torch.Tensor): Tensor of log toxicity values
+        - morgan_tensor (torch.Tensor): Tensor of Morgan fingerprints
+        - filtered_morgan_tensor (torch.Tensor): Tensor of filtered Morgan fingerprints
+        - spectra_indices_tensor (torch.Tensor): Tensor of indices
+    """
+    # Extract spectral data
+    spectra = spectra_dataset.iloc[:, start_idx:stop_idx]
+    
+    # One-hot encode the Group column
+    group_encoded = pd.get_dummies(spectra_dataset['Group'], prefix='group', dtype=int)
+    
+    # One-hot encode the CE_clean column
+    ce_encoded = pd.get_dummies(spectra_dataset['CE_clean'], prefix='ce', dtype=int)
+    
+    # Alternative: Numerical encoding for CE_clean (commented out)
+    # ce_mapping = {'NAN': 0, 'low': 5, 'med': 10, 'high': 15}
+    # ce_numerical = spectra_dataset['CE_clean'].map(ce_mapping).values.reshape(-1, 1)
+    # ce_encoded = pd.DataFrame(ce_numerical, columns=['ce_numerical'], index=spectra_dataset.index)
+
+    # Concatenate spectra with group and collision energy encoding
+    spectra_with_ext = pd.concat([spectra, group_encoded, ce_encoded], axis=1)
+   
+    # Create chemical labels list
+    chem_labels = list(spectra_dataset['SMILES_spectra'])
+    
+    # Create tensors
+    spectra_with_ext_tensor = torch.Tensor(spectra_with_ext.values).to(device)
+    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
+    morgan_tensor = torch.Tensor([morgan_df.loc[morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    filtered_morgan_tensor = torch.Tensor([filtered_morgan_df.loc[filtered_morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
+    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
+
+    return spectra_with_ext_tensor, embeddings_tensor, log_tox_tensor, morgan_tensor, filtered_morgan_tensor, spectra_indices_tensor
 
 
 
@@ -2384,305 +2517,6 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory,
 
 
 
-### =============================================== TENSORS CREATION FUNCTIONS =============================================== ###
-
-# This is our default function, the one we use to prep the data for the encoder that takes us from spectra to ChemNet encodings 
-def create_dataset_tensors(spectra_dataset, embedding_df, device, start_idx=None, stop_idx=None):
-    """
-    Create tensors from the provided spectra dataset and embedding DataFrame.
-
-    Parameters:
-    ----------
-    spectra_dataset : pd.DataFrame
-        DataFrame containing spectral data and chemical labels. Assumes specific 
-        columns for processing based on the `carl` flag.
-
-    embedding_df : pd.DataFrame
-        DataFrame containing embeddings for chemicals, with 'Embedding Floats' 
-        column corresponding to ChemNet embeddings.
-
-    device : torch.device
-        The device (CPU or GPU) on which to store the tensors.
-
-    carl : bool, optional
-        If True, processes the dataset assuming it has a different structure 
-        (specifically without an 'Unnamed: 0' column). Default is False.
-
-    Returns:
-    -------
-    tuple
-        A tuple containing:
-        - embeddings_tensor (torch.Tensor): Tensor of true embeddings for the chemicals.
-        - spectra_tensor (torch.Tensor): Tensor of spectral data.
-        - chem_encodings_tensor (torch.Tensor): Tensor of chemical name encodings.
-        - spectra_indices_tensor (torch.Tensor): Tensor of indices corresponding to the spectra.
-    """
-    spectra = spectra_dataset.iloc[:,start_idx:stop_idx]
-
-    # create tensors of spectra, true embeddings, and spectra indices
-    chem_labels = list(spectra_dataset['SMILES_spectra'])
-    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
-    spectra_tensor = torch.Tensor(spectra.values).to(device)
-    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
-
-    return embeddings_tensor, spectra_tensor, spectra_indices_tensor
-
-def create_dataset_tensors_tox(spectra_dataset,device, start_idx=None, stop_idx=None):
-
-    spectra = spectra_dataset.iloc[:,start_idx:stop_idx] # Prev was [1, -4]
-
-    # create tensors of spectra, true toxicity values, and chemical name encodings for train and val
-    #chem_labels = list(spectra_dataset['SMILES_spectra'])
-    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
-    spectra_tensor = torch.Tensor(spectra.values).to(device)
-    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
-
-    return log_tox_tensor, spectra_tensor, spectra_indices_tensor
-
-def create_dataset_tensors_tox_spec(spectra_dataset,device, start_idx=None, stop_idx=None):
-
-    embedding_cols = [col for col in spectra_dataset.columns if col.startswith('Embedding Float')]
-    spectra = spectra_dataset[embedding_cols]
-
-    # create tensors of spectra, true toxicity values, and chemical name encodings for train and val
-    #chem_labels = list(spectra_dataset['SMILES_spectra'])
-    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
-    spectra_tensor = torch.Tensor(spectra.values).to(device)
-    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
-
-    return log_tox_tensor, spectra_tensor, spectra_indices_tensor
-
-def create_dataset_tensors_emb_tox(spectra_dataset, embedding_df, device, start_idx=None, stop_idx=None):
-
-    spectra = spectra_dataset.iloc[:,start_idx:stop_idx] # prev was [1,-3]
-
-    # create tensors of spectra, true embeddings, true toxicity values, and chemical name encodings for train and val
-    chem_labels = list(spectra_dataset['SMILES_spectra'])
-    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
-    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
-    spectra_tensor = torch.Tensor(spectra.values).to(device)
-    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
-
-    return embeddings_tensor, log_tox_tensor, spectra_tensor, spectra_indices_tensor 
-
-
-
-def create_dataset_tensors_condenc_full2(spectra_dataset, embedding_df, morgan_df, device, start_idx=None, stop_idx=None):
-    """
-    Create tensors for the full conditional encoder WITH group and collision energy information.
-    
-    Parameters:
-    ----------
-    spectra_dataset : pd.DataFrame
-        DataFrame containing spectral data and chemical labels with Group and CE_clean columns
-    embedding_df : pd.DataFrame
-        DataFrame containing ChemNet embeddings for chemicals
-    morgan_df : pd.DataFrame
-        DataFrame containing Morgan fingerprints for chemicals
-    device : torch.device
-        The device (CPU or GPU) on which to store the tensors
-    start_idx : int, optional
-        Start index for spectral columns
-    stop_idx : int, optional
-        Stop index for spectral columns
-    
-    Returns:
-    -------
-    tuple
-        A tuple containing:
-        - spectra_with_ext_tensor (torch.Tensor): Tensor of spectral data concatenated with one-hot encoded group and collision energy
-        - embeddings_tensor (torch.Tensor): Tensor of true ChemNet embeddings
-        - log_tox_tensor (torch.Tensor): Tensor of log toxicity values
-        - morgan_tensor (torch.Tensor): Tensor of Morgan fingerprints
-        - spectra_indices_tensor (torch.Tensor): Tensor of indices
-    """
-    # Extract spectral data
-    spectra = spectra_dataset.iloc[:, start_idx:stop_idx]
-    
-    # One-hot encode the Group column
-    group_encoded = pd.get_dummies(spectra_dataset['Group'], prefix='group', dtype=int)
-    
-    # One-hot encode the CE_clean column
-    ce_encoded = pd.get_dummies(spectra_dataset['CE_clean'], prefix='ce', dtype=int)
-    
-    # Alternative: Numerical encoding for CE_clean (commented out)
-    # ce_mapping = {'NAN': 0, 'low': 5, 'med': 10, 'high': 15}
-    # ce_numerical = spectra_dataset['CE_clean'].map(ce_mapping).values.reshape(-1, 1)
-    # ce_encoded = pd.DataFrame(ce_numerical, columns=['ce_numerical'], index=spectra_dataset.index)
-
-    # Concatenate spectra with group and collision energy encoding
-    spectra_with_ext = pd.concat([spectra, group_encoded, ce_encoded], axis=1)
-   
-    # Create chemical labels list
-    chem_labels = list(spectra_dataset['SMILES_spectra'])
-    
-    # Create tensors
-    spectra_with_ext_tensor = torch.Tensor(spectra_with_ext.values).to(device)
-    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
-    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
-    morgan_tensor = torch.Tensor([morgan_df.loc[morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
-    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
-
-    return spectra_with_ext_tensor, embeddings_tensor, log_tox_tensor, morgan_tensor, spectra_indices_tensor
-
-
-def create_dataset_tensors_condenc_full(spectra_dataset, embedding_df, morgan_df, device, start_idx=None, stop_idx=None):
-    """
-    Create tensors for the full conditional encoder WITH group information.
-    
-    Parameters:
-    ----------
-    spectra_dataset : pd.DataFrame
-        DataFrame containing spectral data and chemical labels with Group column
-    embedding_df : pd.DataFrame
-        DataFrame containing ChemNet embeddings for chemicals
-    morgan_df : pd.DataFrame
-        DataFrame containing Morgan fingerprints for chemicals
-    device : torch.device
-        The device (CPU or GPU) on which to store the tensors
-    start_idx : int, optional
-        Start index for spectral columns
-    stop_idx : int, optional
-        Stop index for spectral columns
-    
-    Returns:
-    -------
-    tuple
-        A tuple containing:
-        - spectra_with_group_tensor (torch.Tensor): Tensor of spectral data concatenated with one-hot encoded group
-        - embeddings_tensor (torch.Tensor): Tensor of true ChemNet embeddings
-        - log_tox_tensor (torch.Tensor): Tensor of log toxicity values
-        - morgan_tensor (torch.Tensor): Tensor of Morgan fingerprints
-        - spectra_indices_tensor (torch.Tensor): Tensor of indices
-    """
-    # Extract spectral data
-    spectra = spectra_dataset.iloc[:, start_idx:stop_idx]
-    
-    # One-hot encode the Group column
-    group_encoded = pd.get_dummies(spectra_dataset['Group'], prefix='group', dtype=int)
-
-    # Concatenate spectra with group encoding
-    spectra_with_group = pd.concat([spectra, group_encoded], axis=1)
-
-    # Create chemical labels list
-    chem_labels = list(spectra_dataset['SMILES_spectra'])
-    
-    # Create tensors
-    spectra_with_group_tensor = torch.Tensor(spectra_with_group.values).to(device)
-    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
-    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
-    morgan_tensor = torch.Tensor([morgan_df.loc[morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
-    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
-
-    return spectra_with_group_tensor, embeddings_tensor, log_tox_tensor, morgan_tensor, spectra_indices_tensor
-
-def create_dataset_tensors_condenc_spec_chemnet_morgan(spectra_dataset, embedding_df, morgan_df, device, start_idx=None, stop_idx=None):
-    """
-    Create tensors for the conditional encoder WITHOUT group information.
-    
-    Parameters:
-    ----------
-    spectra_dataset : pd.DataFrame
-        DataFrame containing spectral data and chemical labels
-    embedding_df : pd.DataFrame
-        DataFrame containing ChemNet embeddings for chemicals
-    morgan_df : pd.DataFrame
-        DataFrame containing Morgan fingerprints for chemicals
-    device : torch.device
-        The device (CPU or GPU) on which to store the tensors
-    start_idx : int, optional
-        Start index for spectral columns
-    stop_idx : int, optional
-        Stop index for spectral columns
-    
-    Returns:
-    -------
-    tuple
-        A tuple containing:
-        - spectra_tensor (torch.Tensor): Tensor of spectral data only
-        - embeddings_tensor (torch.Tensor): Tensor of true ChemNet embeddings
-        - log_tox_tensor (torch.Tensor): Tensor of log toxicity values
-        - morgan_tensor (torch.Tensor): Tensor of Morgan fingerprints
-        - spectra_indices_tensor (torch.Tensor): Tensor of indices
-    """
-    # Extract spectral data (no group encoding)
-    spectra = spectra_dataset.iloc[:, start_idx:stop_idx]
-    
-    # Create chemical labels list
-    chem_labels = list(spectra_dataset['SMILES_spectra'])
-    
-    # Create tensors
-    spectra_tensor = torch.Tensor(spectra.values).to(device)
-    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
-    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
-    morgan_tensor = torch.Tensor([morgan_df.loc[morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
-    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
-
-    return spectra_tensor, embeddings_tensor, log_tox_tensor, morgan_tensor, spectra_indices_tensor
-
-
-
-def create_dataset_tensors_condenc_full2_filtered(spectra_dataset, embedding_df, morgan_df, filtered_morgan_df, device, start_idx=None, stop_idx=None):
-    """
-    Create tensors for the full conditional encoder WITH group and collision energy information and filtered Morgan fingerprints.
-    
-    Parameters:
-    ----------
-    spectra_dataset : pd.DataFrame
-        DataFrame containing spectral data and chemical labels with Group and CE_clean columns
-    embedding_df : pd.DataFrame
-        DataFrame containing ChemNet embeddings for chemicals
-    morgan_df : pd.DataFrame
-        DataFrame containing Morgan fingerprints for chemicals
-    filtered_morgan_df : pd.DataFrame
-        DataFrame containing filtered Morgan fingerprints for chemicals
-    device : torch.device
-        The device (CPU or GPU) on which to store the tensors
-    start_idx : int, optional
-        Start index for spectral columns
-    stop_idx : int, optional
-        Stop index for spectral columns
-    
-    Returns:
-    -------
-    tuple
-        A tuple containing:
-        - spectra_with_ext_tensor (torch.Tensor): Tensor of spectral data concatenated with one-hot encoded group and collision energy
-        - embeddings_tensor (torch.Tensor): Tensor of true ChemNet embeddings
-        - log_tox_tensor (torch.Tensor): Tensor of log toxicity values
-        - morgan_tensor (torch.Tensor): Tensor of Morgan fingerprints
-        - filtered_morgan_tensor (torch.Tensor): Tensor of filtered Morgan fingerprints
-        - spectra_indices_tensor (torch.Tensor): Tensor of indices
-    """
-    # Extract spectral data
-    spectra = spectra_dataset.iloc[:, start_idx:stop_idx]
-    
-    # One-hot encode the Group column
-    group_encoded = pd.get_dummies(spectra_dataset['Group'], prefix='group', dtype=int)
-    
-    # One-hot encode the CE_clean column
-    ce_encoded = pd.get_dummies(spectra_dataset['CE_clean'], prefix='ce', dtype=int)
-    
-    # Alternative: Numerical encoding for CE_clean (commented out)
-    # ce_mapping = {'NAN': 0, 'low': 5, 'med': 10, 'high': 15}
-    # ce_numerical = spectra_dataset['CE_clean'].map(ce_mapping).values.reshape(-1, 1)
-    # ce_encoded = pd.DataFrame(ce_numerical, columns=['ce_numerical'], index=spectra_dataset.index)
-
-    # Concatenate spectra with group and collision energy encoding
-    spectra_with_ext = pd.concat([spectra, group_encoded, ce_encoded], axis=1)
-   
-    # Create chemical labels list
-    chem_labels = list(spectra_dataset['SMILES_spectra'])
-    
-    # Create tensors
-    spectra_with_ext_tensor = torch.Tensor(spectra_with_ext.values).to(device)
-    embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
-    log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
-    morgan_tensor = torch.Tensor([morgan_df.loc[morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
-    filtered_morgan_tensor = torch.Tensor([filtered_morgan_df.loc[filtered_morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
-    spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
-
-    return spectra_with_ext_tensor, embeddings_tensor, log_tox_tensor, morgan_tensor, filtered_morgan_tensor, spectra_indices_tensor
 
     
 ### =========================================== PLOTTING TRAINING CURVES FUNCTIONS =========================================== ###
@@ -2832,638 +2666,3 @@ def plot_multiple_training_curves(loss_data_dict, figsize=(12, 8), save_path=Non
         plt.show()
     
     return fig, ax
-
-### ===================================================== ENCODERS W/O WANDB ==================================================== ###
-
-# ChemNet Encoder
-# batch_size = __
-# epochs= __
-# lr= 0.0001
-# criterion = nn.MSELoss()
-# output_size = 512
-# num_layers = __
-
-def train_model_chemnet_encoder_nowandb(model, train_data, val_data, epochs, learning_rate, criterion, device):
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
- 
-    # Initialize lists to store losses
-    train_losses = []
-    val_losses = []
-
-    for epoch in range(epochs):
-        model.train()
-        running_loss = 0.0
-        for batch, true_embeddings, _ in train_data:  
-            batch = batch.to(device)
-            true_embeddings = true_embeddings.to(device)
-
-            optimizer.zero_grad()
-            batch_predicted_embeddings = model(batch)
-            loss = criterion(batch_predicted_embeddings, true_embeddings)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-        average_train_loss = running_loss / len(train_loader) 
-
-        model.eval()
-        val_loss = 0.0
-        with torch.no_grad():
-            for val_batch, val_true_embeddings, _ in val_data:  
-                val_batch = val_batch.to(device)
-                val_true_embeddings = val_true_embeddings.to(device)
-
-                val_batch_predicted_embeddings = model(val_batch)
-
-                val_batch_loss = criterion(val_batch_predicted_embeddings, val_true_embeddings)  
-                val_loss += val_batch_loss.item() 
-        average_val_loss = val_loss / len(val_loader) 
-
-        # Store losses for this epoch
-        train_losses.append(average_train_loss)
-        val_losses.append(average_val_loss)
-
-        if epoch % 50 == 0 or epoch == epochs - 1:  
-            print(f'Epoch [{epoch+1}/{epochs}]')
-            print(f'   Training loss: {average_train_loss:.6f}')
-            print(f'   Validation loss: {average_val_loss:.6f}')
-    return model, train_losses, val_losses
-
-#%%
-# Morgan Fingerprint Encoder
-# batch_size = __
-# epochs = __
-# lr = 0.0001
-criterion = nn.MSELoss()
-# output_size = 2048
-# num_layers = __
-
-# IMPORTANT NOTE: Morgan fingerprints are typically binary vectors (0s and 1s). So the normal 
-# method of using MSELoss may not be the best choice. Consider using BCEWithLogitsLoss or BCELoss
-
-def train_model_morgan_fp_encoder_nowandb(model, train_data, val_data, epochs, learning_rate, criterion, device):
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-
-    # Initialize lists to store losses
-    train_losses = []
-    val_losses = []
-
-    for epoch in range(epochs):
-        model.train()
-        running_loss = 0.0
-        for batch, true_embeddings, _ in train_data:  
-            batch = batch.to(device)
-            true_embeddings = true_embeddings.to(device)
-
-            optimizer.zero_grad()
-            batch_predicted_embeddings = model(batch)
-            loss = criterion(batch_predicted_embeddings, true_embeddings)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-        average_train_loss = running_loss / len(train_data) 
-
-        model.eval()
-        val_loss = 0.0
-        with torch.no_grad():
-            for val_batch, val_true_embeddings, _ in val_data:  
-                val_batch = val_batch.to(device)
-                val_true_embeddings = val_true_embeddings.to(device)
-
-                val_batch_predicted_embeddings = model(val_batch)
-
-                val_batch_loss = criterion(val_batch_predicted_embeddings, val_true_embeddings)  
-                val_loss += val_batch_loss.item() 
-        average_val_loss = val_loss / len(val_data) 
-        # Store losses for this epoch
-        train_losses.append(average_train_loss)
-        val_losses.append(average_val_loss)
-
-        if epoch % 50 == 0 or epoch == epochs - 1:  
-            print(f'Epoch [{epoch+1}/{epochs}]')
-            print(f'   Training loss: {average_train_loss:.6f}')
-            print(f'   Validation loss: {average_val_loss:.6f}')
-    return model, train_losses, val_losses
-
-#%%
-# Spectra Toxicity MLP
-# batch_size = __
-# epochs = __
-# lr = 0.0001
-# criterion = nn.MSELoss()
-# output_size = 1
-# num_layers = __
-
-def train_model_MLP_spectra_nowandb(model, train_data, val_data, epochs, learning_rate, criterion, device):
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-
-    # Initialize lists to store losses
-    train_losses = []
-    val_losses = []
-
-    for epoch in range(epochs):
-        model.train()
-        running_loss = 0.0
-        for batch, true_log_tox, _ in train_data:
-            batch = batch.to(device)
-            true_log_tox = true_log_tox.to(device)
-
-            optimizer.zero_grad()
-            batch_predicted_log_tox = model(batch)
-            loss = criterion(batch_predicted_log_tox, true_log_tox)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-        average_train_loss = running_loss / len(train_data)
-
-        model.eval()
-        val_loss = 0.0
-        with torch.no_grad():
-            for val_batch, val_true_tox, _ in val_data:
-                val_batch = val_batch.to(device)
-                val_true_tox = val_true_tox.to(device)
-
-                val_batch_predicted_tox = model(val_batch)
-
-                val_batch_loss = criterion(val_batch_predicted_tox, val_true_tox)
-                val_loss += val_batch_loss.item()
-        average_val_loss = val_loss / len(val_data)
-
-        # Store losses for this epoch
-        train_losses.append(average_train_loss)
-        val_losses.append(average_val_loss)
-
-        print(f'Epoch [{epoch+1}/{epochs}]')
-        print(f'   Training loss: {average_train_loss:.6f}')
-        print(f'   Validation loss: {average_val_loss:.6f}')
-    return model, train_losses, val_losses
-
-#%%
-# ChemNet MLP
-# batch_size = __
-# epochs = __
-# lr = 0.0001
-# criterion = nn.MSELoss()
-# output_size = 1
-# num_layers = __
-
-def train_model_MLP_nowandb(model, train_data, val_data, epochs, learning_rate, criterion, device):
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-
-    # Initialize lists to store losses
-    train_losses = []
-    val_losses = []
-
-    for epoch in range(epochs):
-        model.train()
-        running_loss = 0.0
-        for batch, true_log_tox, _ in train_data:
-            batch = batch.to(device)
-            true_log_tox = true_log_tox.to(device)
-
-            optimizer.zero_grad()
-            batch_predicted_log_tox = model(batch)
-            loss = criterion(batch_predicted_log_tox, true_log_tox)
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
-        average_train_loss = running_loss / len(train_data)
-
-        model.eval()
-        val_loss = 0.0
-        with torch.no_grad():
-            for val_batch, val_true_tox, _ in val_data:
-                val_batch = val_batch.to(device)
-                val_true_tox = val_true_tox.to(device)
-
-                val_batch_predicted_tox = model(val_batch)
-
-                val_batch_loss = criterion(val_batch_predicted_tox, val_true_tox)
-                val_loss += val_batch_loss.item()
-        average_val_loss = val_loss / len(val_data)
-
-        # Store losses for this epoch
-        train_losses.append(average_train_loss)
-        val_losses.append(average_val_loss)
-        if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
-            print(f'Epoch [{epoch+1}/{epochs}]')
-            print(f'   Training loss: {average_train_loss:.6f}')
-            print(f'   Validation loss: {average_val_loss:.6f}')
-    return model, train_losses, val_losses
-
-# Conditional encoder (ChemNet + Toxicity) 
-# batch_size = __
-# epochs = __
-# lr = 0.0001
-# criterion1 = nn.MSELoss()
-# criterion2 = nn.MSELoss()
-# output_size = 513
-# num_layers = __
-lambda1 = 1
-lambda2 = 5
-
-def train_model_condenc_chemnet_tox_nowandb(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, 
-                                            lambda1, lambda2, device):
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-
-    # Initialize lists to store losses
-    train_losses = []
-    val_losses = []
-    # New: Store individual loss components (after lambda weighting)
-    train_embedding_losses = []
-    train_toxicity_losses = []
-    val_embedding_losses = []
-    val_toxicity_losses = []
-
-    for epoch in range(epochs):
-        model.train()
-        running_loss = 0.0
-        running_embedding_loss = 0.0
-        running_toxicity_loss = 0.0
-        
-        for batch, true_embeddings, true_log_tox, _ in train_data:
-            batch = batch.to(device)
-            true_embeddings = true_embeddings.to(device)
-            true_log_tox = true_log_tox.to(device)
-
-            optimizer.zero_grad()
-            batch_predicted_combined = model(batch)
-            
-            # Embedding Loss
-            batch_predicted_embeddings = batch_predicted_combined[:, :512]
-            loss1 = criterion1(batch_predicted_embeddings, true_embeddings)
-            # Response Loss
-            batch_predicted_log_tox = batch_predicted_combined[:, 512:]
-            loss2 = criterion2(batch_predicted_log_tox, true_log_tox)
-            
-            # Apply lambda weighting
-            weighted_loss1 = lambda1 * loss1
-            weighted_loss2 = lambda2 * loss2
-            
-            # Loss function with modular weights (lambda1 and lambda2)
-            total_loss = weighted_loss1 + weighted_loss2
-
-            total_loss.backward()
-            optimizer.step()
-            
-            # Accumulate losses
-            running_loss += total_loss.item()
-            running_embedding_loss += weighted_loss1.item()
-            running_toxicity_loss += weighted_loss2.item()
-            
-        average_train_loss = running_loss / len(train_data)
-        average_train_embedding_loss = running_embedding_loss / len(train_data)
-        average_train_toxicity_loss = running_toxicity_loss / len(train_data)
-        
-        model.eval()
-        val_loss = 0.0
-        val_embedding_loss = 0.0
-        val_toxicity_loss = 0.0
-        
-        with torch.no_grad():
-            for val_batch, val_true_embeddings, val_true_tox, _ in val_data:
-                val_batch = val_batch.to(device)
-                val_true_embeddings = val_true_embeddings.to(device)
-                val_true_tox = val_true_tox.to(device)
-
-                val_batch_predicted = model(val_batch)
-                val_batch_predicted_embeddings = val_batch_predicted[:, :512]
-                val_batch_predicted_tox = val_batch_predicted[:, 512:]
-
-                # Calculate individual losses
-                val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
-                val_loss2 = criterion2(val_batch_predicted_tox, val_true_tox)
-                
-                # Apply lambda weighting
-                val_weighted_loss1 = lambda1 * val_loss1
-                val_weighted_loss2 = lambda2 * val_loss2
-                
-                # Accumulate losses
-                val_loss += (val_weighted_loss1 + val_weighted_loss2).item()
-                val_embedding_loss += val_weighted_loss1.item()
-                val_toxicity_loss += val_weighted_loss2.item()
-                
-        average_val_loss = val_loss / len(val_data)
-        average_val_embedding_loss = val_embedding_loss / len(val_data)
-        average_val_toxicity_loss = val_toxicity_loss / len(val_data)
-
-        # Store losses for this epoch
-        train_losses.append(average_train_loss)
-        val_losses.append(average_val_loss)
-        train_embedding_losses.append(average_train_embedding_loss)
-        train_toxicity_losses.append(average_train_toxicity_loss)
-        val_embedding_losses.append(average_val_embedding_loss)
-        val_toxicity_losses.append(average_val_toxicity_loss)
-
-        if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
-            print(f'Epoch [{epoch+1}/{epochs}]')
-            print(f'   Training loss: {average_train_loss:.6f}')
-            print(f'   Training embedding loss: {average_train_embedding_loss:.6f}')
-            print(f'   Training toxicity loss: {average_train_toxicity_loss:.6f}')
-            print(f'   Validation loss: {average_val_loss:.6f}')
-            print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
-            print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
-    return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, val_embedding_losses, val_toxicity_losses
-
-
-#%%
-# Conditional encoder (ChemNet + Toxicity + Morgan Fingerprints) 
-# batch_size = __
-# epochs = __
-# lr = 0.0001
-# criterion1 = nn.MSELoss()
-# criterion2 = nn.MSELoss()
-criterion3 = nn.MSELoss()
-# output_size = 513
-# num_layers = __
-lambda1 = 1
-lambda2 = 5
-lambda3 = 1
-
-def train_model_condenc_chemnet_tox_morgan_nowandb(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, 
-                                                   criterion3, lambda1, lambda2, lambda3, device):
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-
-    # Initialize lists to store losses
-    train_losses = []
-    val_losses = []
-    # Store individual loss components (after lambda weighting)
-    train_embedding_losses = []
-    train_toxicity_losses = []
-    train_morgan_losses = []
-    val_embedding_losses = []
-    val_toxicity_losses = []
-    val_morgan_losses = []
-
-    for epoch in range(epochs):
-        model.train()
-        running_loss = 0.0
-        running_embedding_loss = 0.0
-        running_toxicity_loss = 0.0
-        running_morgan_loss = 0.0
-        
-        for batch, true_embeddings, true_log_tox, true_morgan, _ in train_data:
-            batch = batch.to(device)
-            true_embeddings = true_embeddings.to(device)
-            true_log_tox = true_log_tox.to(device)
-            true_morgan = true_morgan.to(device)
-
-            optimizer.zero_grad()
-            batch_predicted_combined = model(batch)
-            
-            # Embedding Loss
-            batch_predicted_embeddings = batch_predicted_combined[:, :512] # First 512 columns
-            loss1 = criterion1(batch_predicted_embeddings, true_embeddings) # loss1 (embedding loss)
-            # Response Loss
-            batch_predicted_log_tox = batch_predicted_combined[:, 512:513] # 512th column
-            loss2 = criterion2(batch_predicted_log_tox, true_log_tox) # loss2 (toxicity loss)
-            # Morgan Loss
-            batch_predicted_morgan = batch_predicted_combined[:, 513:] # Last 2048 columns
-            loss3 = criterion3(batch_predicted_morgan, true_morgan) # loss3 (morgan loss)
-
-            # Apply lambda weighting
-            weighted_loss1 = lambda1 * loss1
-            weighted_loss2 = lambda2 * loss2
-            weighted_loss3 = lambda3 * loss3
-            
-            # Total loss with modular weights
-            total_loss = weighted_loss1 + weighted_loss2 + weighted_loss3
-
-            total_loss.backward()
-            optimizer.step()
-            
-            # Accumulate losses
-            running_loss += total_loss.item()
-            running_embedding_loss += weighted_loss1.item()
-            running_toxicity_loss += weighted_loss2.item()
-            running_morgan_loss += weighted_loss3.item()
-            
-        average_train_loss = running_loss / len(train_data)
-        average_train_embedding_loss = running_embedding_loss / len(train_data)
-        average_train_toxicity_loss = running_toxicity_loss / len(train_data)
-        average_train_morgan_loss = running_morgan_loss / len(train_data)
-
-        model.eval()
-        val_loss = 0.0
-        val_embedding_loss = 0.0
-        val_toxicity_loss = 0.0
-        val_morgan_loss = 0.0
-        
-        with torch.no_grad():
-            for val_batch, val_true_embeddings, val_true_tox, val_true_morgan, _ in val_data:
-                val_batch = val_batch.to(device)
-                val_true_embeddings = val_true_embeddings.to(device)
-                val_true_tox = val_true_tox.to(device)
-                val_true_morgan = val_true_morgan.to(device)
-
-                val_batch_predicted = model(val_batch)
-                val_batch_predicted_embeddings = val_batch_predicted[:, :512]
-                val_batch_predicted_tox = val_batch_predicted[:, 512:513]
-                val_batch_predicted_morgan = val_batch_predicted[:, 513:]
-
-                # Calculate individual losses
-                val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
-                val_loss2 = criterion2(val_batch_predicted_tox, val_true_tox)
-                val_loss3 = criterion3(val_batch_predicted_morgan, val_true_morgan)
-                
-                # Apply lambda weighting
-                val_weighted_loss1 = lambda1 * val_loss1
-                val_weighted_loss2 = lambda2 * val_loss2
-                val_weighted_loss3 = lambda3 * val_loss3
-                
-                # Accumulate losses
-                val_loss += (val_weighted_loss1 + val_weighted_loss2 + val_weighted_loss3).item()
-                val_embedding_loss += val_weighted_loss1.item()
-                val_toxicity_loss += val_weighted_loss2.item()
-                val_morgan_loss += val_weighted_loss3.item()
-                
-        average_val_loss = val_loss / len(val_data)
-        average_val_embedding_loss = val_embedding_loss / len(val_data)
-        average_val_toxicity_loss = val_toxicity_loss / len(val_data)
-        average_val_morgan_loss = val_morgan_loss / len(val_data)
-
-        # Store losses for this epoch
-        train_losses.append(average_train_loss)
-        val_losses.append(average_val_loss)
-        train_embedding_losses.append(average_train_embedding_loss)
-        train_toxicity_losses.append(average_train_toxicity_loss)
-        train_morgan_losses.append(average_train_morgan_loss)
-        val_embedding_losses.append(average_val_embedding_loss)
-        val_toxicity_losses.append(average_val_toxicity_loss)
-        val_morgan_losses.append(average_val_morgan_loss)
-
-        print(f'Epoch [{epoch+1}/{epochs}]')
-        print(f'   Training loss: {average_train_loss:.6f}')
-        print(f'   Training embedding loss: {average_train_embedding_loss:.6f}')
-        print(f'   Training toxicity loss: {average_train_toxicity_loss:.6f}')
-        print(f'   Training morgan loss: {average_train_morgan_loss:.6f}')
-        print(f'   Validation loss: {average_val_loss:.6f}')
-        print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
-        print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
-        print(f'   Validation morgan loss: {average_val_morgan_loss:.6f}')
-    return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses
-
-
-### ========================================================= HEATMAPS ========================================================= ###
-
-# Also create individual larger heatmaps for Morgan fingerprints for better detail
-def create_detailed_heatmap_morgan(pivot_data, metric_name, cmap, figsize=(12, 8), vmin=None, vmax=None):
-    """Create a detailed heatmap for a single Morgan fingerprint metric"""
-    plt.figure(figsize=figsize)
-    
-    # Create heatmap
-    sns.heatmap(pivot_data, 
-                annot=True, 
-                fmt='.3f' if 'R²' in metric_name else '.1f', 
-                cmap=cmap,
-                square=False,
-                linewidths=0.5,
-                vmin=vmin,
-                vmax=vmax,
-                cbar_kws={'label': f'Test {metric_name}', 'shrink': 0.8})
-    
-    plt.title(f'Morgan Fingerprint: {metric_name} by Bin Size and Threshold', fontsize=16, fontweight='bold')
-    plt.xlabel('Threshold Value', fontsize=14)
-    plt.ylabel('Bin Size', fontsize=14)
-    plt.gca().invert_yaxis()
-    
-    # Improve readability
-    plt.xticks(rotation=45)
-    plt.yticks(rotation=0)
-    
-    # Add text annotation for best performance
-    if 'R²' in metric_name:
-        best_val = pivot_data.max().max()
-        plt.text(0.02, 0.98, f'Best R²: {best_val:.4f}', 
-                transform=plt.gca().transAxes, 
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
-                verticalalignment='top')
-    else:
-        best_val = pivot_data.min().min()
-        plt.text(0.02, 0.98, f'Best {metric_name}: {best_val:.1f}%', 
-                transform=plt.gca().transAxes, 
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
-                verticalalignment='top')
-    
-    plt.tight_layout()
-    plt.savefig(f"/home/dlipsey/MITLincolnLabs/Figures/Morgan_Fingerprint_{metric_name}_by_Bin_Size_and_Threshold")
-    plt.show()
-
-# Also create individual larger heatmaps for better detail
-def create_detailed_heatmap_spec(pivot_data, metric_name, cmap, figsize=(12, 8), vmin=None, vmax=None):
-    """Create a detailed heatmap for a single metric"""
-    plt.figure(figsize=figsize)
-    
-    # Create heatmap
-    sns.heatmap(pivot_data, 
-                annot=True, 
-                fmt='.3f' if 'R²' in metric_name else '.1f', 
-                cmap=cmap,
-                square=False,
-                linewidths=0.5,
-                vmin=vmin,
-                vmax=vmax,
-                cbar_kws={'label': f'Test {metric_name}', 'shrink': 0.8})
-    
-    plt.title(f'Spectra: {metric_name} by Bin Size and Threshold', fontsize=16, fontweight='bold')
-    plt.xlabel('Threshold Value', fontsize=14)
-    plt.ylabel('Bin Size', fontsize=14)
-    plt.gca().invert_yaxis()
-    
-    # Improve readability
-    plt.xticks(rotation=45)
-    plt.yticks(rotation=0)
-    
-    # Add text annotation for best performance
-    if 'R²' in metric_name:
-        best_val = pivot_data.max().max()
-        plt.text(0.02, 0.98, f'Best R²: {best_val:.4f}', 
-                transform=plt.gca().transAxes, 
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
-                verticalalignment='top')
-    else:
-        best_val = pivot_data.min().min()
-        plt.text(0.02, 0.98, f'Best {metric_name}: {best_val:.1f}%', 
-                transform=plt.gca().transAxes, 
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
-                verticalalignment='top')
-    
-    plt.tight_layout()
-    plt.savefig(f"/home/dlipsey/MITLincolnLabs/Figures/Spectra_{metric_name}_by_Bin_Size_and_Threshold")
-    plt.show()
-
-def create_detailed_heatmap_chemnet(pivot_data, metric_name, cmap, figsize=(12, 8), vmin=None, vmax=None):
-    """Create a detailed heatmap for a single ChemNet metric"""
-    plt.figure(figsize=figsize)
-    
-    # Create heatmap
-    sns.heatmap(pivot_data, 
-                annot=True, 
-                fmt='.3f' if 'R²' in metric_name else '.1f', 
-                cmap=cmap,
-                square=False,
-                linewidths=0.5,
-                vmin=vmin,
-                vmax=vmax,
-                cbar_kws={'label': f'Test {metric_name}', 'shrink': 0.8})
-    
-    plt.title(f'ChemNet: {metric_name} by Bin Size and Threshold', fontsize=16, fontweight='bold')
-    plt.xlabel('Threshold Value', fontsize=14)
-    plt.ylabel('Bin Size', fontsize=14)
-    plt.gca().invert_yaxis()
-    
-    # Improve readability
-    plt.xticks(rotation=45)
-    plt.yticks(rotation=0)
-    
-    # Add text annotation for best performance
-    if 'R²' in metric_name:
-        best_val = pivot_data.max().max()
-        plt.text(0.02, 0.98, f'Best R²: {best_val:.4f}', 
-                transform=plt.gca().transAxes, 
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
-                verticalalignment='top')
-    else:
-        best_val = pivot_data.min().min()
-        plt.text(0.02, 0.98, f'Best {metric_name}: {best_val:.1f}%', 
-                transform=plt.gca().transAxes, 
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
-                verticalalignment='top')
-    
-    plt.tight_layout()
-    plt.savefig(f"/home/dlipsey/MITLincolnLabs/Figures/ChemNet_{metric_name}_by_Bin_Size_and_Threshold")
-    plt.show()
-
-def create_detailed_heatmap_cond_enc(pivot_data, metric_name, cmap, figsize=(12, 8), vmin=None, vmax=None):
-    """Create a detailed heatmap for a single conditional encoder metric"""
-    plt.figure(figsize=figsize)
-    
-    # Create heatmap
-    sns.heatmap(pivot_data, 
-                annot=True, 
-                fmt='.1f', 
-                cmap=cmap,
-                square=False,
-                linewidths=0.5,
-                vmin=vmin,
-                vmax=vmax,
-                cbar_kws={'label': f'Test {metric_name}', 'shrink': 0.8})
-    
-    plt.title(f'Conditional Encoder: {metric_name} by Bin Size and Threshold', fontsize=16, fontweight='bold')
-    plt.xlabel('Threshold Value', fontsize=14)
-    plt.ylabel('Bin Size', fontsize=14)
-    plt.gca().invert_yaxis()
-    
-    # Improve readability
-    plt.xticks(rotation=45)
-    plt.yticks(rotation=0)
-    
-    # Add text annotation for best performance
-    best_val = pivot_data.min().min()
-    plt.text(0.02, 0.98, f'Best {metric_name}: {best_val:.1f}%', 
-            transform=plt.gca().transAxes, 
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
-            verticalalignment='top')
-    
-    plt.tight_layout()
-    plt.savefig(f"/home/dlipsey/MITLincolnLabs/Figures/Conditional_encoder_{metric_name}_by_Bin_Size_and_Threshold")
-    plt.show()
