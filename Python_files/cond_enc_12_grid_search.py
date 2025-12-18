@@ -28,26 +28,8 @@ import functions_enc as f
 import function_depot as fd
 
 ##### ==================== GLOBAL REWRITE OF TRAINING PROCESS ==================== #####
-# The big idea of this rewrite is to change the metric we evaulate by. Thus far we have stuck to MSE as our loss function and this
-# swaps to mean OR median percent error as a written class and loss function to train with consistency to the metric of import to us.
-# Function to extract bin size and threshold from dataset name
-def parse_dataset_name(dataset_name):
-    """Extract bin size and threshold from dataset name"""
-    if 'thresh_zero' in dataset_name:
-        # Extract bin size
-        bin_part = dataset_name.split('_thresh_zero')[0].replace('bin', '')
-        bin_size = float(bin_part.replace('_', '.'))
-        threshold = 0.0
-    else:
-        # Extract bin size and threshold
-        parts = dataset_name.split('_thresh')
-        bin_part = parts[0].replace('bin', '')
-        bin_size = float(bin_part.replace('_', '.'))
-        
-        thresh_part = parts[1].split('_df_spectra')[0]
-        threshold = float(thresh_part.replace('_', '.'))
-    
-    return bin_size, threshold
+# The data parsing fucntion has been moved to the function depot for reuse
+
 
 # Storage for conditional encoder results
 cond_encoder_results = [] 
@@ -85,7 +67,7 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.pkl') and 'df_spectra' in f]
 
 # Define allowed bin sizes (exclude 0.01)
-allowed_bin_prefixes = ['bin0_05_', 'bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_', 
+allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_', 
                         'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_', 'bin1000_']
 
 # Filter dataset files to only include allowed bin sizes
@@ -170,7 +152,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         cond_encoder_current = fd.Cond_Encoder_12(input_size=x_train.shape[1], output_size=output_size, num_layers=num_layers).to(device)
         
         # Parse dataset parameters for wandb config
-        bin_size, threshold = parse_dataset_name(dataset_name)
+        bin_size, threshold = fd.parse_dataset_name(dataset_name)
         
         # Create wandb config for this dataset
         chemnet_tox_config = {
