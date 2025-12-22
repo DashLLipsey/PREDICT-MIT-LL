@@ -62,6 +62,54 @@ chemnet_tox_morgan_config = {
         'encoder_type' : "Conditional Encoder"
     }
 
+### ======================================= Weighted Loss ======================================= ###
+
+# Here is the code I got from copilot defining the weighted loss function, as a 2 two step function:
+# In this T is the benchmark value, and alpha is the weight applied to values below T.
+def weighted_loss(y_pred, y_true, alpha):
+    T = torch.log(torch.tensor(100.0))  # ln(100)
+    # base loss (MSE here, but could be MAE or Huber)
+    base_loss = (y_pred - y_true) ** 2
+
+    # weight function
+    weights = torch.where(
+        y_true <= T,
+        torch.full_like(y_true, alpha),
+        torch.ones_like(y_true)
+    )
+
+    # apply weights
+    return (weights * base_loss).mean()
+
+# Here we have the same process, but instead of 2 steps we have 4 to provide a more nuanced weighting scheme.
+# In this case, T1, T2, and T3 are the benchmark values, and alpha1, alpha2, alpha3, and alpha4 are the weights for each range. The T
+# values are embedded into the function as they are less likely to change than the alpha values.
+def weighted_loss(y_pred, y_true, alpha1, alpha2, alpha3, alpha4):
+    # Calculate log benchmarks
+    T1 = torch.log(torch.tensor(5.0))    # ln(5)
+    T2 = torch.log(torch.tensor(50.0))   # ln(50)
+    T3 = torch.log(torch.tensor(100.0))  # ln(100)
+
+    # Base loss (MSE here, but could be MAE or Huber)
+    base_loss = (y_pred - y_true) ** 2
+
+    # Weight function based on y_true ranges
+    weights = torch.where(
+        y_true <= T1,
+        torch.full_like(y_true, alpha1),  # First range (y_true <= ln(5))
+        torch.where(
+            y_true <= T2,
+            torch.full_like(y_true, alpha2),  # Second range (ln(5) < y_true <= ln(50))
+            torch.where(
+                y_true <= T3,
+                torch.full_like(y_true, alpha3),  # Third range (ln(50) < y_true <= ln(100))
+                torch.full_like(y_true, alpha4)   # Fourth range (y_true > ln(100))
+            )
+        )
+    )
+
+    # Apply weights to the base loss
+    return (weights * base_loss).mean()
 
 
 ### ======================================================= ENCODERS ======================================================= ###
@@ -354,7 +402,7 @@ class Cond_Encoder_12(nn.Module): # From Cond_Encoder_chemnet_tox
         return final_output
 
 # From train_model_condenc_chemnet_tox
-def train_model_12(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, 
+def train_model_condenc_12(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, 
                                     lambda1, lambda2, device, config = chemnet_tox_config):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     wandb.init(entity=config['wandb_entity'],
@@ -1227,6 +1275,183 @@ def train_model_condenc_1234e1e2(model, train_data, val_data, epochs, learning_r
     wandb.finish()
     return model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, train_morgan_losses, train_filtered_morgan_losses, val_embedding_losses, val_toxicity_losses, val_morgan_losses, val_filtered_morgan_losses
 
+
+
+
+# The full model traiing function with the 2 step weighted loss function incorportated
+
+def train_model_condenc_1234e1e2_weightloss(model, train_data, val_data, epochs, learning_rate, criterion1, criterion3, criterion4,
+                                 lambda1, lambda2, lambda3, lambda4, device, config=None, 
+                                 weighted_loss_params=None):
+    # Initialize optimizer
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+    # Initialize wandb and log parameters
+    wandb.init(entity=config['wandb_entity'],
+               project=config['wandb_project'],
+               config=config)
+    wandb.config.update(weighted_loss_params)  # Log the weighted loss parameter "alpha"
+
+    # Extract `alpha` for weighted loss
+    alpha = weighted_loss_params['alpha']
+
+    # Lists for storing training and validation losses for monitoring
+    train_losses, val_losses = [], []
+    train_embedding_losses, train_toxicity_losses, train_morgan_losses, train_filtered_morgan_losses = [], [], [], []
+    val_embedding_losses, val_toxicity_losses, val_morgan_losses, val_filtered_morgan_losses = [], [], [], []
+
+    for epoch in range(epochs):
+        model.train()  # Set the model to training mode
+
+        # Accumulate training losses
+        running_loss = 0.0
+        running_embedding_loss = 0.0
+        running_toxicity_loss = 0.0
+        running_morgan_loss = 0.0
+        running_filtered_morgan_loss = 0.0
+
+        for batch_with_ext, true_embeddings, true_log_tox, true_morgan, true_filtered_morgan, _ in train_data:
+            # Move data to the specified device
+            batch_with_ext = batch_with_ext.to(device)
+            true_embeddings = true_embeddings.to(device)
+            true_log_tox = true_log_tox.to(device)
+            true_morgan = true_morgan.to(device)
+            true_filtered_morgan = true_filtered_morgan.to(device)
+
+            # Zero gradients
+            optimizer.zero_grad()
+
+            # Forward pass
+            batch_predicted_combined = model(batch_with_ext)
+
+            # Embedding Loss
+            batch_predicted_embeddings = batch_predicted_combined[:, :512]
+            loss1 = criterion1(batch_predicted_embeddings, true_embeddings)
+
+            # Toxicity Loss (using the updated weighted_loss function)
+            batch_predicted_log_tox = batch_predicted_combined[:, 512:513]
+            loss2 = weighted_loss(batch_predicted_log_tox, true_log_tox, alpha)
+
+            # Morgan Loss
+            batch_predicted_morgan = batch_predicted_combined[:, 513:513 + 2048]
+            loss3 = criterion3(batch_predicted_morgan, true_morgan)
+
+            # Filtered Morgan Loss
+            batch_predicted_filtered_morgan = batch_predicted_combined[:, 513 + 2048:]
+            loss4 = criterion4(batch_predicted_filtered_morgan, true_filtered_morgan)
+
+            # Apply Lambda Scaling
+            weighted_loss1 = lambda1 * loss1
+            weighted_loss2 = lambda2 * loss2
+            weighted_loss3 = lambda3 * loss3
+            weighted_loss4 = lambda4 * loss4
+
+            # Total Loss
+            total_loss = weighted_loss1 + weighted_loss2 + weighted_loss3 + weighted_loss4
+
+            # Backpropagation and optimizer step
+            total_loss.backward()
+            optimizer.step()
+
+            # Accumulate losses for this batch
+            running_loss += total_loss.item()
+            running_embedding_loss += weighted_loss1.item()
+            running_toxicity_loss += weighted_loss2.item()
+            running_morgan_loss += weighted_loss3.item()
+            running_filtered_morgan_loss += weighted_loss4.item()
+
+        # Store and log epoch-wise averaged training losses
+        train_losses.append(running_loss / len(train_data))
+        train_embedding_losses.append(running_embedding_loss / len(train_data))
+        train_toxicity_losses.append(running_toxicity_loss / len(train_data))
+        train_morgan_losses.append(running_morgan_loss / len(train_data))
+        train_filtered_morgan_losses.append(running_filtered_morgan_loss / len(train_data))
+
+        wandb.log({
+            "epoch": epoch,
+            "train_loss": train_losses[-1],
+            "train_embedding_loss": train_embedding_losses[-1],
+            "train_toxicity_loss": train_toxicity_losses[-1],
+            "train_morgan_loss": train_morgan_losses[-1],
+            "train_filtered_morgan_loss": train_filtered_morgan_losses[-1]
+        })
+
+        # Validation Phase
+        model.eval()  # Set the model to evaluation mode
+        val_loss = 0.0
+        val_running_embedding_loss = 0.0
+        val_running_toxicity_loss = 0.0
+        val_running_morgan_loss = 0.0
+        val_running_filtered_morgan_loss = 0.0
+
+        with torch.no_grad():
+            for val_batch_with_ext, val_true_embeddings, val_true_tox, val_true_morgan, val_true_filtered_morgan, _ in val_data:
+                # Move validation data to the specified device
+                val_batch_with_ext = val_batch_with_ext.to(device)
+                val_true_embeddings = val_true_embeddings.to(device)
+                val_true_tox = val_true_tox.to(device)
+                val_true_morgan = val_true_morgan.to(device)
+                val_true_filtered_morgan = val_true_filtered_morgan.to(device)
+
+                # Forward pass
+                val_batch_predicted = model(val_batch_with_ext)
+
+                # Embedding Loss
+                val_predicted_embeddings = val_batch_predicted[:, :512]
+                val_loss1 = criterion1(val_predicted_embeddings, val_true_embeddings)
+
+                # Toxicity Loss (using the updated weighted_loss function)
+                val_predicted_tox = val_batch_predicted[:, 512:513]
+                val_loss2 = weighted_loss(val_predicted_tox, val_true_tox, alpha)
+
+                # Morgan Loss
+                val_predicted_morgan = val_batch_predicted[:, 513:513 + 2048]
+                val_loss3 = criterion3(val_predicted_morgan, val_true_morgan)
+
+                # Filtered Morgan Loss
+                val_predicted_filtered_morgan = val_batch_predicted[:, 513 + 2048:]
+                val_loss4 = criterion4(val_predicted_filtered_morgan, val_true_filtered_morgan)
+
+                # Apply Lambda Scaling
+                val_weighted_loss1 = lambda1 * val_loss1
+                val_weighted_loss2 = lambda2 * val_loss2
+                val_weighted_loss3 = lambda3 * val_loss3
+                val_weighted_loss4 = lambda4 * val_loss4
+
+                # Total Validation Loss
+                val_loss += (val_weighted_loss1 + val_weighted_loss2 + val_weighted_loss3 + val_weighted_loss4).item()
+                val_running_embedding_loss += val_weighted_loss1.item()
+                val_running_toxicity_loss += val_weighted_loss2.item()
+                val_running_morgan_loss += val_weighted_loss3.item()
+                val_running_filtered_morgan_loss += val_weighted_loss4.item()
+
+        # Store and log validation losses
+        val_losses.append(val_loss / len(val_data))
+        val_embedding_losses.append(val_running_embedding_loss / len(val_data))
+        val_toxicity_losses.append(val_running_toxicity_loss / len(val_data))
+        val_morgan_losses.append(val_running_morgan_loss / len(val_data))
+        val_filtered_morgan_losses.append(val_running_filtered_morgan_loss / len(val_data))
+
+        wandb.log({
+            "epoch": epoch,
+            "val_loss": val_losses[-1],
+            "val_embedding_loss": val_embedding_losses[-1],
+            "val_toxicity_loss": val_toxicity_losses[-1],
+            "val_morgan_loss": val_morgan_losses[-1],
+            "val_filtered_morgan_loss": val_filtered_morgan_losses[-1]
+        })
+
+    # Finish wandb session
+    wandb.finish()
+
+    return model, {
+        "train_losses": train_losses,
+        "val_losses": val_losses,
+        "train_embedding_losses": train_embedding_losses,
+        "val_embedding_losses": val_embedding_losses,
+        "train_toxicity_losses": train_toxicity_losses,
+        "val_toxicity_losses": val_toxicity_losses
+    }
 ### =============================================== TENSORS CREATION FUNCTIONS =============================================== ###
 
 # This is our default function, the one we use to prep the data for the encoder that takes us from spectra to ChemNet encodings 
@@ -2518,151 +2743,22 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory,
 
 
 
-    
-### =========================================== PLOTTING TRAINING CURVES FUNCTIONS =========================================== ###
+### ==================================================== Parsing Datasets ===================================================== ###
 
-import matplotlib.pyplot as plt
-
-def plot_training_curves(train_losses, val_losses, model_name="Model", 
-                        figsize=(10, 6), save_path=None, show_plot=True,
-                        title_fontsize=16, label_fontsize=14, legend_fontsize=12):
-    """
-    Plot training and validation loss curves.
-    
-    Parameters:
-    -----------
-    train_losses : list
-        List of training losses for each epoch
-    val_losses : list  
-        List of validation losses for each epoch
-    model_name : str, optional
-        Name of the model for the plot title. Default is "Model"
-    figsize : tuple, optional
-        Figure size (width, height). Default is (10, 6)
-    save_path : str, optional
-        Path to save the plot. If None, plot is not saved. Default is None
-    show_plot : bool, optional
-        Whether to display the plot. Default is True
-    title_fontsize : int, optional
-        Font size for the title. Default is 16
-    label_fontsize : int, optional
-        Font size for axis labels. Default is 14
-    legend_fontsize : int, optional
-        Font size for the legend. Default is 12
+def parse_dataset_name(dataset_name, data_suffix='_df_spectra'):
+    """Extract bin size and threshold from dataset name"""
+    if 'thresh_zero' in dataset_name:
+        # Extract bin size
+        bin_part = dataset_name.split('_thresh_zero')[0].replace('bin', '')
+        bin_size = float(bin_part.replace('_', '.'))
+        threshold = 0.0
+    else:
+        # Extract bin size and threshold
+        parts = dataset_name.split('_thresh')
+        bin_part = parts[0].replace('bin', '')
+        bin_size = float(bin_part.replace('_', '.'))
         
-    Returns:
-    --------
-    fig : matplotlib.figure.Figure
-        The figure object
-    ax : matplotlib.axes.Axes
-        The axes object
-    """
+        thresh_part = parts[1].split(data_suffix)[0]
+        threshold = float(thresh_part.replace('_', '.'))
     
-    # Create the plot
-    fig, ax = plt.subplots(figsize=figsize)
-    
-    # Plot training and validation losses
-    epochs = range(1, len(train_losses) + 1)
-    ax.plot(epochs, train_losses, 'b-', label='Training Loss', linewidth=2)
-    ax.plot(epochs, val_losses, 'r-', label='Validation Loss', linewidth=2)
-    
-    # Customize the plot
-    ax.set_xlabel('Epoch', fontsize=label_fontsize)
-    ax.set_ylabel('Loss', fontsize=label_fontsize)
-    ax.set_title(f'{model_name}: Training and Validation Loss', fontsize=title_fontsize, fontweight='bold')
-    ax.legend(fontsize=legend_fontsize)
-    ax.grid(True, alpha=0.3)
-    
-    # Add annotations for final losses
-    final_train_loss = train_losses[-1]
-    final_val_loss = val_losses[-1]
-    
-    # Add text box with final loss values
-    textstr = f'Final Training Loss: {final_train_loss:.6f}\nFinal Validation Loss: {final_val_loss:.6f}'
-    props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
-    ax.text(0.02, 0.98, textstr, transform=ax.transAxes, fontsize=10,
-            verticalalignment='top', bbox=props)
-    
-    # Improve layout
-    plt.tight_layout()
-    
-    # Save if path provided
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Plot saved to: {save_path}")
-    
-    # Show plot if requested
-    if show_plot:
-        plt.show()
-    
-    return fig, ax
-
-def plot_multiple_training_curves(loss_data_dict, figsize=(12, 8), save_path=None, 
-                                 show_plot=True, title_fontsize=16, label_fontsize=14, 
-                                 legend_fontsize=10):
-    """
-    Plot multiple training curves on the same plot for comparison.
-    
-    Parameters:
-    -----------
-    loss_data_dict : dict
-        Dictionary with model names as keys and tuples of (train_losses, val_losses) as values
-        Example: {'ChemNet Encoder': (train_losses1, val_losses1), 
-                  'Morgan FP Encoder': (train_losses2, val_losses2)}
-    figsize : tuple, optional
-        Figure size (width, height). Default is (12, 8)
-    save_path : str, optional
-        Path to save the plot. If None, plot is not saved. Default is None
-    show_plot : bool, optional
-        Whether to display the plot. Default is True
-    title_fontsize : int, optional
-        Font size for the title. Default is 16
-    label_fontsize : int, optional
-        Font size for axis labels. Default is 14
-    legend_fontsize : int, optional
-        Font size for the legend. Default is 10
-        
-    Returns:
-    --------
-    fig : matplotlib.figure.Figure
-        The figure object
-    ax : matplotlib.axes.Axes
-        The axes object
-    """
-    
-    # Create the plot
-    fig, ax = plt.subplots(figsize=figsize)
-    
-    # Color palette for different models
-    colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'pink', 'gray']
-    
-    for i, (model_name, (train_losses, val_losses)) in enumerate(loss_data_dict.items()):
-        color = colors[i % len(colors)]
-        epochs = range(1, len(train_losses) + 1)
-        
-        # Plot with different line styles for train vs validation
-        ax.plot(epochs, train_losses, color=color, linestyle='-', 
-                label=f'{model_name} (Train)', linewidth=2, alpha=0.8)
-        ax.plot(epochs, val_losses, color=color, linestyle='--', 
-                label=f'{model_name} (Val)', linewidth=2, alpha=0.8)
-    
-    # Customize the plot
-    ax.set_xlabel('Epoch', fontsize=label_fontsize)
-    ax.set_ylabel('Loss', fontsize=label_fontsize)
-    ax.set_title('Training and Validation Loss Comparison', fontsize=title_fontsize, fontweight='bold')
-    ax.legend(fontsize=legend_fontsize, bbox_to_anchor=(1.05, 1), loc='upper left')
-    ax.grid(True, alpha=0.3)
-    
-    # Improve layout
-    plt.tight_layout()
-    
-    # Save if path provided
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Plot saved to: {save_path}")
-    
-    # Show plot if requested
-    if show_plot:
-        plt.show()
-    
-    return fig, ax
+    return bin_size, threshold

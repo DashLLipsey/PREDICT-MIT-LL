@@ -110,6 +110,15 @@ filtered_morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/d
 df6_subset = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_subset.parquet")
 df6_spectra = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_spectra.parquet")
 
+# Define folders
+grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes_df6"
+
+# Get all dataset files from the grid search folder
+dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
+
+# Storage for conditional encoder results
+cond_encoder_results = []
+
 # Create Group mapping once at the start
 print("Creating Group mapping from df6_spectra...")
 id_to_group = dict(zip(df6_spectra['index_id'], df6_spectra['Group']))
@@ -119,12 +128,6 @@ print(f"Group mapping created with {len(id_to_group)} entries")
 print("Creating CE_clean mapping from df6_spectra...")
 id_to_ce_clean = dict(zip(df6_spectra['index_id'], df6_spectra['CE_clean']))
 print(f"CE_clean mapping created with {len(id_to_ce_clean)} entries")
-
-# Define folders
-grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes_df6"
-
-# Get all dataset files from the grid search folder
-dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
 # ============================= HYPERPARAMETER TUNING GRID SEARCH ============================= #
 import itertools
@@ -174,11 +177,16 @@ original_count = len(dataset)
 dataset_no_super_test = dataset[~dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
 removed_count = original_count - len(dataset_no_super_test)
 
-# Add Group and CE_clean columns using the mappings created above
+# OPTIMIZATION 2: Efficient Group addition using copy() to avoid fragmentation
 if 'Group' not in dataset_no_super_test.columns:
+    dataset_no_super_test = dataset_no_super_test.copy()  # Defragment DataFrame
     dataset_no_super_test['Group'] = dataset_no_super_test['index_id'].map(id_to_group).fillna('Unknown')
+    print(f"Added Group column. Unique groups: {dataset_no_super_test['Group'].nunique()}")
+
+# Add CE_clean column if not present
 if 'CE_clean' not in dataset_no_super_test.columns:
     dataset_no_super_test['CE_clean'] = dataset_no_super_test['index_id'].map(id_to_ce_clean).fillna('Unknown')
+    print(f"Added CE_clean column. Unique CE_clean values: {dataset_no_super_test['CE_clean'].nunique()}")
 
 # Apply filtering (>=4 spectra per SMILES)
 counts = dataset_no_super_test['SMILES_spectra'].value_counts()
@@ -214,9 +222,14 @@ test_data_processed = fd.add_response_and_log_response(test_data.copy(), df6_sub
 super_test_df = dataset[dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
 if len(super_test_df) > 0:
     if 'Group' not in super_test_df.columns:
+        super_test_df = super_test_df.copy()  # Defragment DataFrame
         super_test_df['Group'] = super_test_df['index_id'].map(id_to_group).fillna('Unknown')
+        print(f"Added Group column to super test. Unique groups: {super_test_df['Group'].nunique()}")
+    
+    # Add CE_clean column if not present
     if 'CE_clean' not in super_test_df.columns:
         super_test_df['CE_clean'] = super_test_df['index_id'].map(id_to_ce_clean).fillna('Unknown')
+        print(f"Added CE_clean column to super test. Unique CE_clean values: {super_test_df['CE_clean'].nunique()}")
     
     super_test_df['index'] = range(len(super_test_df))
     super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
