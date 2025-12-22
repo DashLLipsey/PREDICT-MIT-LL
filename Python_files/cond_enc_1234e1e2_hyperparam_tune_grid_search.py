@@ -52,6 +52,7 @@ super_test_smiles = [
     'CCCCOC(=O)COC(=O)c1ccccc1C(=O)OCCCC',
     'NC(C(=O)O)c1ccccc1'
 ]
+
 def parse_dataset_name(dataset_name):
     """Extract bin size and threshold from dataset name"""
     if 'thresh_zero' in dataset_name:
@@ -109,14 +110,21 @@ filtered_morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/d
 df6_subset = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_subset.parquet")
 df6_spectra = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_spectra.parquet")
 
+# Create Group mapping once at the start
+print("Creating Group mapping from df6_spectra...")
+id_to_group = dict(zip(df6_spectra['index_id'], df6_spectra['Group']))
+print(f"Group mapping created with {len(id_to_group)} entries")
+
+# Create CE_clean mapping from df6_spectra
+print("Creating CE_clean mapping from df6_spectra...")
+id_to_ce_clean = dict(zip(df6_spectra['index_id'], df6_spectra['CE_clean']))
+print(f"CE_clean mapping created with {len(id_to_ce_clean)} entries")
+
 # Define folders
 grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes_df6"
 
 # Get all dataset files from the grid search folder
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
-
-
-
 
 # ============================= HYPERPARAMETER TUNING GRID SEARCH ============================= #
 import itertools
@@ -166,7 +174,7 @@ original_count = len(dataset)
 dataset_no_super_test = dataset[~dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
 removed_count = original_count - len(dataset_no_super_test)
 
-# Add Group and CE_clean columns
+# Add Group and CE_clean columns using the mappings created above
 if 'Group' not in dataset_no_super_test.columns:
     dataset_no_super_test['Group'] = dataset_no_super_test['index_id'].map(id_to_group).fillna('Unknown')
 if 'CE_clean' not in dataset_no_super_test.columns:
