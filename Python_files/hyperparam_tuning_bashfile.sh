@@ -1,8 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=Conditional_encoder_hyperparam_tuning
 #SBATCH --output=/home/dlipsey/MITLincolnLabs/logs/cond_encoder1234e1e2_hyperparam_tuning_%j.out
-#SBATCH --time=00:00:10
-#SBATCH --partition=short
+#SBATCH --partition=long
 #SBATCH --gres=gpu:1
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=8
@@ -20,6 +19,6 @@ echo "GPU: $CUDA_VISIBLE_DEVICES"
 # Run the bijection-based IMS spectra experiment
 source /home/dlipsey/MITLincolnLabs/.venv/bin/activate #fix directory
 cd /home/dlipsey/MITLincolnLabs/Python_files
-python file.py
+python /home/dlipsey/MITLincolnLabs/Python_files/cond_enc_1234e1e2_hyperparam_tune_grid_search.py
 
 echo "Finished at: $(date)"
