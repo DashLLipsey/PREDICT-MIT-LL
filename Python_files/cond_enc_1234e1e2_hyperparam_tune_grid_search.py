@@ -318,7 +318,6 @@ for i, params in enumerate(param_combinations, 1):
             epochs=epochs,
             learning_rate=lr,
             criterion1=criterion1,
-            criterion2=criterion2,
             criterion3=criterion3,
             criterion4=criterion4,
             lambda1=lambda1,
