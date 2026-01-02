@@ -78,13 +78,16 @@ cond_encoder_results = []
 output_size = None  # Will be set dynamically based on data
 num_layers = 5
 batch_size = 256
-epochs = 800
+epochs = 300
 lr = 0.0001
-lambda1 = 3
-lambda2 = 15
+lambda1 = 1
+lambda2 = 5
 lambda3 = 1  # For regular Morgan fingerprints
-lambda4 = 3  # For filtered Morgan fingerprints
-
+lambda4 = 1  # For filtered Morgan fingerprints
+alpha1 = 1
+alpha2 = 1
+alpha3 = 1
+alpha4 = 1
 # Loss functions
 criterion1 = nn.MSELoss()  # ChemNet embeddings
 criterion2 = nn.MSELoss()  # Toxicity
@@ -112,8 +115,17 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
 # Allow only range of interest as given by Rod/Sasha
-allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_']
-allowed_threshold_suffixes = ['thresh0_01', 'thresh0_05', 'thresh0_1']
+# allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
+# allowed_threshold_suffixes = ['thresh0_01', 'thresh0_05', 'thresh0_1']
+
+# allowed_bin_prefixes = ['bin1_', 'bin5_']
+# allowed_threshold_suffixes = ['thresh0_05']
+
+# allowed_bin_prefixes = ['bin0_5_', 'bin2_']
+# allowed_threshold_suffixes = ['thresh0_05']
+
+allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
+allowed_threshold_suffixes = ['thresh0_05']
 
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
@@ -238,15 +250,15 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             'lambda2': lambda2,
             'lambda3': lambda3,
             'lambda4': lambda4,
-            'alpha1': 4,
-            'alpha2': 3,
-            'alpha3': 2,
-            'alpha4': 1,
+            'alpha1': alpha1,
+            'alpha2': alpha2,
+            'alpha3': alpha3,
+            'alpha4': alpha4,
             'Bin': bin_size,
             'Threshold': threshold,
             'super_test_removed': True,
         }
-        
+
         # ==================== TRAIN MODEL ==================== #
         print("Training model...")
         trained_cond_encoder = fd.train_model_condenc_1234e1e2_weightloss(
@@ -264,10 +276,10 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             lambda4=lambda4,
             device=device,
             config=chemnet_tox_morgan_config,
-            alpha1=4,
-            alpha2=3,
-            alpha3=2,
-            alpha4=1
+            alpha1=alpha1,
+            alpha2=alpha2,
+            alpha3=alpha3,
+            alpha4=alpha4
         )
         
         # ==================== EVALUATE ON FULL VALIDATION SET ==================== #
@@ -353,7 +365,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
             
             # Create tensors for super test set
-            x_super_test_with_ext, y_super_test_emb, y_super_test_tox, y_super_test_morgan, y_super_test_filtered_morgan, super_test_indices_tensor = fd.create_dataset_tensors_condenc_full2_filtered(
+            x_super_test_with_ext, y_super_test_emb, y_super_test_tox, y_super_test_morgan, y_super_test_filtered_morgan, super_test_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2(
                 super_test_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-6)
             
             # Generate predictions on super test set
