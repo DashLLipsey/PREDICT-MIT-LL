@@ -2456,9 +2456,15 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory,
                     del binned_data
 
                     # Remove duplicate columns before adding response data
-                    preserve_cols = [filled_data.columns[0], filled_data.columns[indx_id_indx]]  # SMILES and index_id
+                    preserve_cols = [filled_data.columns[0]]  # SMILES column
+                    if 'index_id' in filled_data.columns:
+                        preserve_cols.append('index_id')
+                    elif len(filled_data.columns) > abs(indx_id_indx):
+                        preserve_cols.append(filled_data.columns[indx_id_indx])
+                    else:
+                        print(f"Warning: index_id column not found and indx_id_indx={indx_id_indx} is out of bounds for {len(filled_data.columns)} columns")
+
                     filled_data_clean = remove_duplicate_columns(filled_data, preserve_cols)
-                    
                     # Clear intermediate variables
                     del filled_data
                     
@@ -2533,9 +2539,15 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory,
                 del binned_data
 
                 # Remove duplicate columns before adding response data
-                preserve_cols = [filled_data.columns[0], filled_data.columns[indx_id_indx]]  # SMILES and index_id
+                preserve_cols = [filled_data.columns[0]]  # SMILES column
+                if 'index_id' in filled_data.columns:
+                    preserve_cols.append('index_id')
+                elif len(filled_data.columns) > abs(indx_id_indx):
+                    preserve_cols.append(filled_data.columns[indx_id_indx])
+                else:
+                    print(f"Warning: index_id column not found and indx_id_indx={indx_id_indx} is out of bounds for {len(filled_data.columns)} columns")
+
                 filled_data_clean = remove_duplicate_columns(filled_data, preserve_cols)
-                
                 # Clear intermediate variables
                 del filled_data
                 
