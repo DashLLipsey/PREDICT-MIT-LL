@@ -124,8 +124,15 @@ dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parqu
 # allowed_bin_prefixes = ['bin0_5_', 'bin2_']
 # allowed_threshold_suffixes = ['thresh0_05']
 
-allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
-allowed_threshold_suffixes = ['thresh0_05']
+# allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
+# allowed_threshold_suffixes = ['thresh0_05']
+
+# Allow all bin sizes and thresholds
+allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
+                        'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_']
+allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
+                             'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
+                             'thresh50', 'thresh100']
 
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]

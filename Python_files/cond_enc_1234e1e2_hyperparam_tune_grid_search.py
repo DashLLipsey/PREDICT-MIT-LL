@@ -135,17 +135,17 @@ from sklearn.model_selection import ParameterGrid
 
 # Define hyperparameter grids
 hyperparameter_grid = {
-    'lambda1': [1, 3, 5, 10],
-    'lambda2': [5, 10, 15, 20, 30],
-    'lambda3': [0.5, 1, 2, 5],
-    'lambda4': [0.1, 0.5, 1, 2, 5],  # For filtered Morgan fingerprints
-    'alpha1': [0.1, 0.5, 1, 2],
-    'alpha2': [0.1, 0.5, 1, 2],
-    'alpha3': [0.1, 0.5, 1, 2],
-    'alpha4': [0.1, 0.5, 1, 2],
-    'batch_size': [64, 128, 256, 512],
-    'epochs': [100, 200, 300, 400],
-    'learning_rate': [0.0001, 0.0005, 0.001],
+    'lambda1': [1, 3, 5],
+    'lambda2': [5, 10, 15],
+    'lambda3': [1, 3, 5],
+    'lambda4': [1, 3, 5],  
+    'alpha1': [4, 10],
+    'alpha2': [3, 8],
+    'alpha3': [2, 6],
+    'alpha4': [1],
+    'batch_size': [128, 256],
+    'epochs': [300, 400, 500],
+    'learning_rate': [0.001],
     'num_layers': [4, 6, 8, 10]
 }
 
@@ -434,13 +434,13 @@ print(f"Best Parameters: {best_params}")
 hyperparam_df = pd.DataFrame(hyperparam_results)
 
 # Save results
-hyperparam_results_path = f"/home/dlipsey/MITLincolnLabs/MIT_LL_data/hyperparameter_tuning_results_{SELECTED_DATASET}.parquet"
+hyperparam_results_path = f"/home/dlipsey/MITLincolnLabs/MIT_LL_data/hyperparam_grid_search/hyperparameter_tuning_results_{SELECTED_DATASET}.parquet"
 hyperparam_df.to_parquet(hyperparam_results_path, index=False)
 print(f"Results saved to: {hyperparam_results_path}")
 
 # Save best model
 if best_model_state is not None:
-    best_model_path = f"/home/dlipsey/MITLincolnLabs/MIT_LL_data/best_model_{SELECTED_DATASET}.pt"
+    best_model_path = f"/home/dlipsey/MITLincolnLabs/MIT_LL_data/hyperparam_grid_search/best_model_{SELECTED_DATASET}.pt"
     torch.save(best_model_state, best_model_path)
     print(f"Best model saved to: {best_model_path}")
 
