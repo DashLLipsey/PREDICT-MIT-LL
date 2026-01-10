@@ -3233,3 +3233,199 @@ def add_epa_levels(df, response_col='Response', assign_func=assign_epa_level):
     df[epa_cols] = df[epa_cols].astype(int)
     #df.drop(columns=[response_col], inplace=True)
     return df
+
+
+### ================================== Weighted Classification ================================== ###
+
+# Modified Conditional encoder
+class Cond_Encoder_1234_class_weight(nn.Module):
+    def __init__(self, input_size, output_size, num_layers):
+        super().__init__()
+        layers = []
+        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
+        for i in range(num_layers):
+            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i < num_layers - 1:
+                layers.append(nn.LeakyReLU(inplace=True))
+        self.encoder = nn.Sequential(*layers)
+
+    def forward(self, x):
+        output = self.encoder(x)
+        
+        # Split the output into four parts
+        embedding_output = output[:, :512]    # ChemNet embeddings (no activation)
+        toxicity_raw = output[:, 512:516]    # Now output 4 dimensions for 4 toxicity classes
+        morgan_output = output[:, 516:516+2048]  # Morgan fingerprints (2048 columns)
+        filtered_morgan_output = output[:, 516+2048:]  # Filtered Morgan fingerprints (remaining columns)
+    
+        # No sigmoid for toxicity_raw as it will be used for cross entropy
+        toxicity_output = toxicity_raw
+    
+        # Concatenate back together
+        final_output = torch.cat([embedding_output, toxicity_output, morgan_output, filtered_morgan_output], dim=1)
+        
+        return final_output
+
+
+# Function to calculate class-weighted loss for CrossEntropyLoss
+def class_weight_loss(predicted, target, class_weights):
+    """
+    Compute class-weighted cross-entropy loss.
+    
+    Parameters:
+    ----------
+    predicted : Tensor
+        Predicted logits (unnormalized).
+    target : Tensor
+        True labels.
+    class_weights : Tensor
+        Tensor of weights for each class.
+
+    Returns:
+    -------
+    Tensor
+        Weighted loss.
+    """
+    ce_loss = nn.CrossEntropyLoss(reduction='none')  # Obtain per-sample loss
+    loss = ce_loss(predicted, target)
+    weighted_loss = loss * class_weights[target]  # Multiply sample-wise loss by class weights
+    return weighted_loss.mean()  # Return mean loss
+
+
+# Modified training function
+def train_model_condenc_1234e1e2_class_weight(
+    model, train_data, val_data, epochs, learning_rate, criterion1, criterion3, criterion4, lambda1, lambda2, 
+    lambda3, lambda4, alpha1, alpha2, alpha3, alpha4, device, config):
+    """
+    Train the conditional encoder model with class-weighted toxicity loss per EPA level.
+    """
+
+    # Define optimizer
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    
+    # Initialize wandb for logging
+    wandb.init(entity=config['wandb_entity'],
+               project=config['wandb_project'],
+               config=config)
+    
+    # Initialize lists to store losses
+    train_losses = []
+    val_losses = []
+
+    # Define class weights for toxicity classes
+    class_weights = torch.tensor([alpha1, alpha2, alpha3, alpha4], device=device)
+
+    for epoch in range(epochs):
+        model.train()
+        running_loss = 0.0
+
+        for batch_with_ext, true_embeddings, true_tox_class, true_morgan, true_filtered_morgan, _ in train_data:
+            batch_with_ext = batch_with_ext.to(device)
+            true_embeddings = true_embeddings.to(device)
+            true_tox_class = true_tox_class.to(device)  # Ensure toxicity class labels are integers for CrossEntropyLoss
+            true_morgan = true_morgan.to(device)
+            true_filtered_morgan = true_filtered_morgan.to(device)
+
+            optimizer.zero_grad()
+            batch_predicted_combined = model(batch_with_ext)
+
+            # Calculate individual losses
+            # Embedding Loss
+            batch_predicted_embeddings = batch_predicted_combined[:, :512]
+            loss1 = criterion1(batch_predicted_embeddings, true_embeddings)
+
+            # Toxicity Classification Loss with class weights
+            batch_predicted_log_tox = batch_predicted_combined[:, 512:516]
+            loss2 = class_weight_loss(batch_predicted_log_tox, true_tox_class, class_weights)
+
+            # Morgan Loss
+            batch_predicted_morgan = batch_predicted_combined[:, 516:516 + 2048]
+            loss3 = criterion3(batch_predicted_morgan, true_morgan)
+
+            # Filtered Morgan Loss
+            batch_predicted_filtered_morgan = batch_predicted_combined[:, 516 + 2048:]
+            loss4 = criterion4(batch_predicted_filtered_morgan, true_filtered_morgan)
+
+            # Apply lambda weighting
+            weighted_loss1 = lambda1 * loss1
+            weighted_loss2 = lambda2 * loss2
+            weighted_loss3 = lambda3 * loss3
+            weighted_loss4 = lambda4 * loss4
+
+            # Total Loss
+            total_loss = weighted_loss1 + weighted_loss2 + weighted_loss3 + weighted_loss4
+
+            # Backpropagation and optimization
+            total_loss.backward()
+            optimizer.step()
+
+            # Accumulate losses for logging
+            running_loss += total_loss.item()
+
+        # Calculate average losses per epoch
+        average_train_loss = running_loss / len(train_data)
+        
+        # Log training losses
+        wandb.log({
+            "average_train_loss": average_train_loss,
+        })
+
+        # Validation Phase
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for val_batch_with_ext, val_true_embeddings, val_true_tox_class, val_true_morgan, val_true_filtered_morgan, _ in val_data:
+                val_batch_with_ext = val_batch_with_ext.to(device)
+                val_true_embeddings = val_true_embeddings.to(device)
+                val_true_tox_class = val_true_tox_class.to(device)
+                val_true_morgan = val_true_morgan.to(device)
+                val_true_filtered_morgan = val_true_filtered_morgan.to(device)
+
+                val_batch_predicted = model(val_batch_with_ext)
+
+                # Calculate individual losses
+                val_batch_predicted_embeddings = val_batch_predicted[:, :512]
+                val_batch_predicted_log_tox = val_batch_predicted[:, 512:516]
+                val_batch_predicted_morgan = val_batch_predicted[:, 516:516 + 2048]
+                val_batch_predicted_filtered_morgan = val_batch_predicted[:, 516 + 2048:]
+
+                # Embedding Loss
+                val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
+
+                # Toxicity Classification Loss with class weights
+                val_loss2 = class_weight_loss(val_batch_predicted_log_tox, val_true_tox_class, class_weights)
+
+                # Morgan Loss
+                val_loss3 = criterion3(val_batch_predicted_morgan, val_true_morgan)
+
+                # Filtered Morgan Loss
+                val_loss4 = criterion4(val_batch_predicted_filtered_morgan, val_true_filtered_morgan)
+
+                # Apply lambda weighting
+                val_weighted_loss1 = lambda1 * val_loss1
+                val_weighted_loss2 = lambda2 * val_loss2
+                val_weighted_loss3 = lambda3 * val_loss3
+                val_weighted_loss4 = lambda4 * val_loss4
+
+                # Accumulate validation losses
+                val_loss += val_weighted_loss1.item() + val_weighted_loss2.item() + val_weighted_loss3.item() + val_weighted_loss4.item()
+
+        # Calculate average validation losses per epoch
+        average_val_loss = val_loss / len(val_data)
+        
+        # Log validation losses
+        wandb.log({
+            "average_val_loss": average_val_loss,
+        })
+
+        # Store losses for epoch
+        train_losses.append(average_train_loss)
+        val_losses.append(average_val_loss)
+
+        if epoch % 10 == 0 or epoch == epochs - 1:
+            print(f"Epoch [{epoch+1}/{epochs}]")
+            print(f"   Training loss: {average_train_loss:.6f}")
+            print(f"   Validation loss: {average_val_loss:.6f}")
+    
+    wandb.finish()
+    return model, train_losses, val_losses
