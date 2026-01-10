@@ -113,17 +113,14 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
 # Allow only range of interest as given by Rod/Sasha
-allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
-allowed_threshold_suffixes = ['thresh0_01', 'thresh0_05', 'thresh0_1']
+# allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
+# allowed_threshold_suffixes = ['thresh0_01', 'thresh0_05', 'thresh0_1']
 
-# allowed_bin_prefixes = ['bin1_', 'bin5_']
-# allowed_threshold_suffixes = ['thresh0_05']
+allowed_bin_prefixes = ['bin0_1_', 'bin10_', 'bin25_', 'bin50_']
+allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1']
 
-# allowed_bin_prefixes = ['bin0_5_', 'bin2_']
-# allowed_threshold_suffixes = ['thresh0_05']
-
-# allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_']
-# allowed_threshold_suffixes = ['thresh0_05']
+# allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
+# allowed_threshold_suffixes = ['thresh_zero']
 
 # Allow all bin sizes and thresholds
 # allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',

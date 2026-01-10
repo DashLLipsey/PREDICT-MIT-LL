@@ -2924,9 +2924,7 @@ class Cond_Encoder_1234_class(nn.Module):
 
 
 
-import torch
 from torch.nn import CrossEntropyLoss
-import wandb
 criterion2 = CrossEntropyLoss()
 
 def train_model_condenc_1234e1e2_class(model, train_data, val_data, epochs, learning_rate, criterion1,  criterion2, criterion3, criterion4,

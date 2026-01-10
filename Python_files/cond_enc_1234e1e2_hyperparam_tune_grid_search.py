@@ -135,10 +135,10 @@ from sklearn.model_selection import ParameterGrid
 
 # Define hyperparameter grids
 hyperparameter_grid = {
-    'lambda1': [1, 3, 5],
+    'lambda1': [0, 1, 3, 5],
     'lambda2': [5, 10, 15],
-    'lambda3': [1, 3, 5],
-    'lambda4': [1, 3, 5],  
+    'lambda3': [0, 1, 3, 5],
+    'lambda4': [0, 1, 3, 5],  
     'alpha1': [4, 10],
     'alpha2': [3, 8],
     'alpha3': [2, 6],
