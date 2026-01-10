@@ -2157,31 +2157,6 @@ def add_response_and_log_response(spectra_df, original_df, smiles_col='SMILES_sp
     spectra_df['log_response'] = np.log(spectra_df['Response'])
     return spectra_df
 
-# Define a function to assign EPA levels
-def assign_epa_level(response):
-    if response <= 50:
-        return "EPA_level_1"
-    elif response <= 500:
-        return "EPA_level_2"
-    elif response <= 5000:
-        return "EPA_level_3"
-    else:
-        return "EPA_level_4"
-
-# Add EPA levels (one-hot encoded)
-def add_epa_levels(df, response_col='Response', assign_func=assign_epa_level):
-    """
-    Adds EPA level columns (one-hot) to the DataFrame based on the response column.
-    Removes the original response column.
-    """
-    df = df.copy()
-    df["EPA_level"] = df[response_col].apply(assign_func)
-    df = pd.get_dummies(df, columns=["EPA_level"], prefix='', prefix_sep='')
-    epa_cols = [col for col in df.columns if str(col).startswith("EPA_level_")]
-    df[epa_cols] = df[epa_cols].astype(int)
-    #df.drop(columns=[response_col], inplace=True)
-    return df
-
 # Morgan fingerprint extraction function
 def expand_fingerprints_to_matrix(df, smiles_col='SMILES_spectra', fp_col='fp'):
     """
@@ -3167,7 +3142,6 @@ def train_model_condenc_1234e1e2_class(model, train_data, val_data, epochs, lear
             train_morgan_losses, train_filtered_morgan_losses, val_embedding_losses, 
             val_toxicity_losses, val_morgan_losses, val_filtered_morgan_losses)
 
-
 def create_dataset_tensors_condenc_1234e1e2_class(spectra_dataset, embedding_df, morgan_df, filtered_morgan_df, device, start_idx=None, stop_idx=None):
     """
     Create tensors for the conditional encoder WITH group and collision energy information and filtered Morgan fingerprints,
@@ -3225,9 +3199,9 @@ def create_dataset_tensors_condenc_1234e1e2_class(spectra_dataset, embedding_df,
     spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
 
     # Toxicity label processing: determine if we use one-hot columns or a single-class column
-    if {'EPA_level1', 'EPA_level2', 'EPA_level3', 'EPA_level4'}.issubset(spectra_dataset.columns):
+    if {'EPA_level_1', 'EPA_level_2', 'EPA_level_3', 'EPA_level_4'}.issubset(spectra_dataset.columns):
         # Case 1: EPA levels are one-hot encoded across multiple columns
-        toxicity_classes = spectra_dataset[['EPA_level1', 'EPA_level2', 'EPA_level3', 'EPA_level4']]
+        toxicity_classes = spectra_dataset[['EPA_level_1', 'EPA_level_2', 'EPA_level_3', 'EPA_level_4']]
         tox_class_indices = torch.argmax(torch.Tensor(toxicity_classes.values), dim=1).long().to(device)
     elif 'EPA_level' in spectra_dataset.columns:
         # Case 2: EPA levels are stored in a single column with values 1, 2, 3, 4
@@ -3236,3 +3210,28 @@ def create_dataset_tensors_condenc_1234e1e2_class(spectra_dataset, embedding_df,
         raise ValueError("The input DataFrame must contain either one-hot columns 'EPA_level1' to 'EPA_level4' or a single 'EPA_level' column.")
 
     return spectra_with_ext_tensor, embeddings_tensor, tox_class_indices, morgan_tensor, filtered_morgan_tensor, spectra_indices_tensor
+
+# Define a function to assign EPA levels
+def assign_epa_level(response):
+    if response <= 50:
+        return "EPA_level_1"
+    elif response <= 500:
+        return "EPA_level_2"
+    elif response <= 5000:
+        return "EPA_level_3"
+    else:
+        return "EPA_level_4"
+
+# Add EPA levels (one-hot encoded)
+def add_epa_levels(df, response_col='Response', assign_func=assign_epa_level):
+    """
+    Adds EPA level columns (one-hot) to the DataFrame based on the response column.
+    Removes the original response column.
+    """
+    df = df.copy()
+    df["EPA_level"] = df[response_col].apply(assign_func)
+    df = pd.get_dummies(df, columns=["EPA_level"], prefix='', prefix_sep='')
+    epa_cols = [col for col in df.columns if str(col).startswith("EPA_level_")]
+    df[epa_cols] = df[epa_cols].astype(int)
+    #df.drop(columns=[response_col], inplace=True)
+    return df

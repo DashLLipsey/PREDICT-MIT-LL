@@ -144,7 +144,7 @@ hyperparameter_grid = {
     'alpha3': [2, 6],
     'alpha4': [1],
     'batch_size': [128, 256],
-    'epochs': [300, 400, 500],
+    'epochs': [100, 300, 500],
     'learning_rate': [0.001],
     'num_layers': [4, 6, 8, 10]
 }
@@ -154,7 +154,7 @@ delta1 = 0.7  # Weight for super test set performance
 delta2 = 0.3  # Weight for regular test set performance
 
 # Select single bin/threshold combination for hyperparameter tuning
-SELECTED_DATASET = "bin1_thresh0_05_df_spectra"  # Choose your preferred combination
+SELECTED_DATASET = "bin0_1_thresh0_05_df_spectra"  
 print(f"Running hyperparameter tuning on: {SELECTED_DATASET}")
 
 # Generate all hyperparameter combinations
@@ -243,6 +243,39 @@ morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_morgan
 # Load filtered Morgan fingerprint data for 1234e1e2
 filtered_morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_filtered_morganfp.parquet")
 
+# Validate data availability before creating tensors
+print("Validating data consistency...")
+train_smiles = set(train_data_processed['SMILES_spectra'].unique())
+test_smiles = set(test_data_processed['SMILES_spectra'].unique())
+chemnet_smiles = set(name_smiles_embedding_df['SMILES_spectra'].unique())
+morgan_smiles = set(morgan_df['SMILES_spectra'].unique())
+filtered_morgan_smiles = set(filtered_morgan_df['SMILES_spectra'].unique())
+
+print(f"Train SMILES: {len(train_smiles)}")
+print(f"Test SMILES: {len(test_smiles)}")  
+print(f"ChemNet SMILES: {len(chemnet_smiles)}")
+print(f"Morgan SMILES: {len(morgan_smiles)}")
+print(f"Filtered Morgan SMILES: {len(filtered_morgan_smiles)}")
+
+# Check for missing SMILES in key datasets
+train_missing_chemnet = train_smiles - chemnet_smiles
+train_missing_morgan = train_smiles - morgan_smiles
+train_missing_filtered = train_smiles - filtered_morgan_smiles
+
+test_missing_chemnet = test_smiles - chemnet_smiles  
+test_missing_morgan = test_smiles - morgan_smiles
+test_missing_filtered = test_smiles - filtered_morgan_smiles
+
+if train_missing_chemnet or test_missing_chemnet:
+    print(f"ERROR: Missing ChemNet data for {len(train_missing_chemnet | test_missing_chemnet)} SMILES")
+    
+if train_missing_morgan or test_missing_morgan:
+    print(f"ERROR: Missing Morgan data for {len(train_missing_morgan | test_missing_morgan)} SMILES")
+    
+if train_missing_filtered or test_missing_filtered:
+    print(f"WARNING: Missing Filtered Morgan data for {len(train_missing_filtered | test_missing_filtered)} SMILES")
+    print("This will cause tensor dimension mismatch errors!")
+
 # Create tensors once (they don't change across hyperparameter combinations)
 print("Creating tensors...")
 x_train_with_ext, y_train_emb, y_train_tox, y_train_morgan, y_train_filtered_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2(
@@ -256,7 +289,16 @@ if len(super_test_df) > 0:
         super_test_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-6)
 
 actual_input_size = x_train_with_ext.shape[1]
-output_size = 2561  # ChemNet (512) + Toxicity (1) + Morgan (2048) for 1234e1e2
+# Calculate output size dynamically from actual data
+regular_morgan_bits = y_train_morgan.shape[1]
+filtered_morgan_bits = y_train_filtered_morgan.shape[1]
+output_size = 512 + 1 + regular_morgan_bits + filtered_morgan_bits  # ChemNet + Toxicity + Morgan + Filtered Morgan
+
+print(f"Tensor shapes created successfully:")
+print(f"  Input size: {actual_input_size}")
+print(f"  Output size: {output_size} (512 ChemNet + 1 Toxicity + {regular_morgan_bits} Morgan + {filtered_morgan_bits} Filtered Morgan)")
+print(f"  Regular Morgan tensor shape: {y_train_morgan.shape}")
+print(f"  Filtered Morgan tensor shape: {y_train_filtered_morgan.shape}")
 
 print(f"Starting hyperparameter grid search...")
 

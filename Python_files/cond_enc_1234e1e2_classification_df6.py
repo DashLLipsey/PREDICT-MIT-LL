@@ -8,6 +8,7 @@ import seaborn as sns
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
+from torch.nn import CrossEntropyLoss
 import requests
 
 # Packages I don't understand
@@ -84,18 +85,15 @@ lambda1 = 1
 lambda2 = 5
 lambda3 = 1  # For regular Morgan fingerprints
 lambda4 = 1  # For filtered Morgan fingerprints
-alpha1 = 4
-alpha2 = 3
-alpha3 = 2
-alpha4 = 1
+
 # Loss functions
 criterion1 = nn.MSELoss()  # ChemNet embeddings
-criterion2 = nn.MSELoss()  # Toxicity
+criterion2 = CrossEntropyLoss()  # Toxicity classification
 criterion3 = nn.MSELoss()  # Morgan fingerprints
 criterion4 = nn.MSELoss()  # Filtered Morgan fingerprints
 
 # CONDITIONAL ENCODER TRAINING LOOP - Process all grid search datasets
-print("=== CONDITIONAL ENCODER (ChemNet + Toxicity + Morgan + Filtered Morgan + Group + CE_clean) TRAINING ===")
+print("=== CONDITIONAL ENCODER (ChemNet + Toxicity Classification + Morgan + Filtered Morgan + Group + CE_clean) TRAINING ===")
 print(f"Super test SMILES to remove from training: {len(super_test_smiles)}")
 
 # Set up device and load all reference datasets
@@ -115,8 +113,8 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
 # Allow only range of interest as given by Rod/Sasha
-# allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
-# allowed_threshold_suffixes = ['thresh0_01', 'thresh0_05', 'thresh0_1']
+allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
+allowed_threshold_suffixes = ['thresh0_01', 'thresh0_05', 'thresh0_1']
 
 # allowed_bin_prefixes = ['bin1_', 'bin5_']
 # allowed_threshold_suffixes = ['thresh0_05']
@@ -124,15 +122,15 @@ dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parqu
 # allowed_bin_prefixes = ['bin0_5_', 'bin2_']
 # allowed_threshold_suffixes = ['thresh0_05']
 
-# allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
+# allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_']
 # allowed_threshold_suffixes = ['thresh0_05']
 
 # Allow all bin sizes and thresholds
-allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
-                        'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_']
-allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
-                             'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
-                             'thresh50', 'thresh100']
+# allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
+#                         'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_']
+# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
+#                              'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
+#                              'thresh50', 'thresh100']
 
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
@@ -154,8 +152,8 @@ print(f"CE_clean mapping created with {len(id_to_ce_clean)} entries")
 # Calculate output size from the fingerprint data
 regular_morgan_bits = morgan_df.shape[1] - 1  # Subtract 1 for SMILES_spectra column
 filtered_morgan_bits = filtered_morgan_df.shape[1] - 1  # Subtract 1 for SMILES_spectra column
-output_size = 512 + 1 + regular_morgan_bits + filtered_morgan_bits  # ChemNet + Toxicity + Morgan + Filtered Morgan
-print(f"Calculated output size: {output_size} (512 ChemNet + 1 Toxicity + {regular_morgan_bits} Morgan + {filtered_morgan_bits} Filtered Morgan)")
+output_size = 512 + 4 + regular_morgan_bits + filtered_morgan_bits  # ChemNet + 4-class Toxicity + Morgan + Filtered Morgan
+print(f"Calculated output size: {output_size} (512 ChemNet + 4 Toxicity Classes + {regular_morgan_bits} Morgan + {filtered_morgan_bits} Filtered Morgan)")
 
 # Loop through each dataset and train one model, then evaluate on both full validation and super test sets
 for i, dataset_name in enumerate(sorted(dataset_names), 1):
@@ -212,17 +210,20 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         train_data['index'] = range(len(train_data))
         test_data['index'] = range(len(test_data))
         
-        # Process datasets
+        # Process datasets - add response and EPA levels
         train_data_processed = fd.add_response_and_log_response(train_data.copy(), df6_subset, smiles_col='SMILES_spectra')
+        train_data_processed = fd.add_epa_levels(train_data_processed)
+        
         test_data_processed = fd.add_response_and_log_response(test_data.copy(), df6_subset, smiles_col='SMILES_spectra')
+        test_data_processed = fd.add_epa_levels(test_data_processed)
 
         # Create tensors for training
         print("Creating training tensors...")
-        x_train_with_ext, y_train_emb, y_train_tox, y_train_morgan, y_train_filtered_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2(
-                train_data_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-6)
+        x_train_with_ext, y_train_emb, y_train_tox_class, y_train_morgan, y_train_filtered_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2_class(
+                train_data_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-10)
 
-        x_val_with_ext, y_val_emb, y_val_tox, y_val_morgan, y_val_filtered_morgan, val_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2(
-            test_data_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-6)
+        x_val_with_ext, y_val_emb, y_val_tox_class, y_val_morgan, y_val_filtered_morgan, val_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2_class(
+            test_data_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-10)
 
         # Create model
         actual_input_size = x_train_with_ext.shape[1]
@@ -233,8 +234,8 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
                                                              num_layers=num_layers).to(device)
         
         # Create DataLoaders for training
-        train_dataset = TensorDataset(x_train_with_ext, y_train_emb, y_train_tox, y_train_morgan, y_train_filtered_morgan, train_indices_tensor)
-        val_dataset = TensorDataset(x_val_with_ext, y_val_emb, y_val_tox, y_val_morgan, y_val_filtered_morgan, val_indices_tensor)
+        train_dataset = TensorDataset(x_train_with_ext, y_train_emb, y_train_tox_class, y_train_morgan, y_train_filtered_morgan, train_indices_tensor)
+        val_dataset = TensorDataset(x_val_with_ext, y_val_emb, y_val_tox_class, y_val_morgan, y_val_filtered_morgan, val_indices_tensor)
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=False, num_workers=0)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, pin_memory=False, num_workers=0)
                 
@@ -245,9 +246,9 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         chemnet_tox_morgan_config = {
             'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
             'wandb_project': 'MIT-Lincoln-Lab',
-            'wandb_name': f"cond_enc_filtered_df6_{dataset_name}",
+            'wandb_name': f"cond_enc_class_filtered_df6_{dataset_name}",
             'gpu': True,
-            'encoder_type': "Conditional Encoder ChemNet + Toxicity + Morgan + Filtered Morgan + Group + CE_clean",
+            'encoder_type': "Conditional Encoder ChemNet + Toxicity Classification + Morgan + Filtered Morgan + Group + CE_clean",
             'batch_size': batch_size,
             'output_size': output_size,
             'num_layers': num_layers,
@@ -257,10 +258,6 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             'lambda2': lambda2,
             'lambda3': lambda3,
             'lambda4': lambda4,
-            'alpha1': alpha1,
-            'alpha2': alpha2,
-            'alpha3': alpha3,
-            'alpha4': alpha4,
             'Bin': bin_size,
             'Threshold': threshold,
             'super_test_removed': True,
@@ -268,13 +265,14 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
 
         # ==================== TRAIN MODEL ==================== #
         print("Training model...")
-        trained_cond_encoder = fd.train_model_condenc_1234e1e2_weightloss(
+        trained_cond_encoder = fd.train_model_condenc_1234e1e2_class(
             model=cond_encoder_current,
             train_data=train_loader,
             val_data=val_loader,
             epochs=epochs,
             learning_rate=lr,
             criterion1=criterion1,
+            criterion2=criterion2,
             criterion3=criterion3,
             criterion4=criterion4,
             lambda1=lambda1,
@@ -282,11 +280,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             lambda3=lambda3,
             lambda4=lambda4,
             device=device,
-            config=chemnet_tox_morgan_config,
-            alpha1=alpha1,
-            alpha2=alpha2,
-            alpha3=alpha3,
-            alpha4=alpha4
+            config=chemnet_tox_morgan_config
         )
         
         # ==================== EVALUATE ON FULL VALIDATION SET ==================== #
@@ -295,10 +289,11 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         filtered_dataset_full = filtered_dataset.copy()
         filtered_dataset_full['index'] = range(len(filtered_dataset_full))
         filtered_dataset_full_processed = fd.add_response_and_log_response(filtered_dataset_full.copy(), df6_subset, smiles_col='SMILES_spectra')
+        filtered_dataset_full_processed = fd.add_epa_levels(filtered_dataset_full_processed)
         
         # Create tensors for full validation set
-        x_full_val_with_ext, y_full_val_emb, y_full_val_tox, y_full_val_morgan, y_full_val_filtered_morgan, full_val_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2(
-            filtered_dataset_full_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-6)
+        x_full_val_with_ext, y_full_val_emb, y_full_val_tox_class, y_full_val_morgan, y_full_val_filtered_morgan, full_val_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2_class(
+            filtered_dataset_full_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-10)
         
         # Generate predictions on full validation set
         cond_encoder_current.eval()
@@ -311,10 +306,16 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         filtered_morgan_cols = [f'cond_filtered_morgan_{j}' for j in range(filtered_morgan_bits)]
         
         full_val_output_df = pd.DataFrame(full_val_predictions[:, :512], columns=emb_cols)
-        full_val_output_df['cond_tox_pred'] = full_val_predictions[:, 512]
+        
+        # Add toxicity classification predictions (4 logits)
+        tox_logits_cols = [f'cond_tox_logit_{j}' for j in range(4)]
+        full_val_output_df[tox_logits_cols] = full_val_predictions[:, 512:516]
+        
+        # Add predicted class (argmax of logits)
+        full_val_output_df['cond_tox_pred_class'] = np.argmax(full_val_predictions[:, 512:516], axis=1)
         
         # Add Morgan fingerprint predictions
-        morgan_start_idx = 513
+        morgan_start_idx = 516
         morgan_end_idx = morgan_start_idx + regular_morgan_bits
         full_val_morgan_pred_df = pd.DataFrame(full_val_predictions[:, morgan_start_idx:morgan_end_idx], columns=morgan_cols)
         full_val_output_df = pd.concat([full_val_output_df, full_val_morgan_pred_df], axis=1)
@@ -340,7 +341,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             thresh_part = parts[1].split('_df_spectra')[0]
             threshold_part = f"thresh{thresh_part}"
         
-        full_val_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_1234e1e2_outputs_df6"
+        full_val_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_1234e1e2_classification_df6"
         os.makedirs(full_val_output_folder, exist_ok=True)
 
         full_val_predictions_filename = f"cond_enc_{bin_part}_{threshold_part}_df_spectra.parquet"
@@ -370,10 +371,11 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             # Process super test set
             super_test_df['index'] = range(len(super_test_df))
             super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
+            super_test_processed = fd.add_epa_levels(super_test_processed)
             
             # Create tensors for super test set
-            x_super_test_with_ext, y_super_test_emb, y_super_test_tox, y_super_test_morgan, y_super_test_filtered_morgan, super_test_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2(
-                super_test_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-6)
+            x_super_test_with_ext, y_super_test_emb, y_super_test_tox_class, y_super_test_morgan, y_super_test_filtered_morgan, super_test_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2_class(
+                super_test_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-10)
             
             # Generate predictions on super test set
             with torch.no_grad():
@@ -381,7 +383,12 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
 
             # Create super test output DataFrame
             super_test_output_df = pd.DataFrame(super_test_predictions[:, :512], columns=emb_cols)
-            super_test_output_df['cond_tox_pred'] = super_test_predictions[:, 512]
+            
+            # Add toxicity classification predictions (4 logits)
+            super_test_output_df[tox_logits_cols] = super_test_predictions[:, 512:516]
+            
+            # Add predicted class (argmax of logits)
+            super_test_output_df['cond_tox_pred_class'] = np.argmax(super_test_predictions[:, 512:516], axis=1)
             
             # Add Morgan fingerprint predictions
             super_test_morgan_pred_df = pd.DataFrame(super_test_predictions[:, morgan_start_idx:morgan_end_idx], columns=morgan_cols)
@@ -398,7 +405,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             super_test_output_df['index_id'] = super_test_processed['index'].values
             
             # Save super test set predictions
-            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_1234e1e2_supertest_outputs"
+            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_1234e1e2_classification_df6_super_test"
             os.makedirs(super_test_output_folder, exist_ok=True)
 
             super_test_predictions_filename = f"super_test_cond_enc_{bin_part}_{threshold_part}_df_spectra.parquet"
@@ -417,11 +424,11 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         print(f"Completed processing {dataset_name}")
 
         # Clear GPU memory after each dataset
-        del x_train_with_ext, x_val_with_ext, y_train_emb, y_train_tox, y_train_morgan, y_train_filtered_morgan
-        del y_val_emb, y_val_tox, y_val_morgan, y_val_filtered_morgan, train_indices_tensor, val_indices_tensor
-        del x_full_val_with_ext, y_full_val_emb, y_full_val_tox, y_full_val_morgan, y_full_val_filtered_morgan, full_val_indices_tensor
+        del x_train_with_ext, x_val_with_ext, y_train_emb, y_train_tox_class, y_train_morgan, y_train_filtered_morgan
+        del y_val_emb, y_val_tox_class, y_val_morgan, y_val_filtered_morgan, train_indices_tensor, val_indices_tensor
+        del x_full_val_with_ext, y_full_val_emb, y_full_val_tox_class, y_full_val_morgan, y_full_val_filtered_morgan, full_val_indices_tensor
         if 'x_super_test_with_ext' in locals():
-            del x_super_test_with_ext, y_super_test_emb, y_super_test_tox, y_super_test_morgan, y_super_test_filtered_morgan, super_test_indices_tensor
+            del x_super_test_with_ext, y_super_test_emb, y_super_test_tox_class, y_super_test_morgan, y_super_test_filtered_morgan, super_test_indices_tensor
         del cond_encoder_current, trained_cond_encoder
         torch.cuda.empty_cache()
         
@@ -430,5 +437,5 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         torch.cuda.empty_cache()
         continue
 
-print(f"\n=== CONDITIONAL ENCODER TRAINING AND EVALUATION COMPLETED ===")
+print(f"\n=== CONDITIONAL ENCODER CLASSIFICATION TRAINING AND EVALUATION COMPLETED ===")
 print(f"Successfully processed datasets")
