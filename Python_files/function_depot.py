@@ -67,29 +67,30 @@ chemnet_tox_morgan_config = {
 
 # Here is the code I got from copilot defining the weighted loss function, as a 2 two step function:
 # In this T is the benchmark value, and alpha is the weight applied to values below T.
-def weighted_loss(y_pred, y_true, alpha):
-    T = torch.log(torch.tensor(100.0))  # ln(100)
-    # base loss (MSE here, but could be MAE or Huber)
-    base_loss = (y_pred - y_true) ** 2
+# def weighted_loss(y_pred, y_true, alpha):
+#     T = torch.log(torch.tensor(100.0))  # ln(100)
+#     # base loss (MSE here, but could be MAE or Huber)
+#     base_loss = (y_pred - y_true) ** 2
 
-    # weight function
-    weights = torch.where(
-        y_true <= T,
-        torch.full_like(y_true, alpha),
-        torch.ones_like(y_true)
-    )
+#     # weight function
+#     weights = torch.where(
+#         y_true <= T,
+#         torch.full_like(y_true, alpha),
+#         torch.ones_like(y_true)
+#     )
 
-    # apply weights
-    return (weights * base_loss).mean()
+#     # apply weights
+#     return (weights * base_loss).mean()
 
 # Here we have the same process, but instead of 2 steps we have 4 to provide a more nuanced weighting scheme.
 # In this case, T1, T2, and T3 are the benchmark values, and alpha1, alpha2, alpha3, and alpha4 are the weights for each range. The T
 # values are embedded into the function as they are less likely to change than the alpha values.
 def weighted_loss(y_pred, y_true, alpha1=4, alpha2=3, alpha3=2, alpha4=1):
-    # Calculate log benchmarks
-    T1 = torch.log(torch.tensor(5.0))    # ln(5)
-    T2 = torch.log(torch.tensor(50.0))   # ln(50)
-    T3 = torch.log(torch.tensor(100.0))  # ln(100)
+    # Calculate log benchmarks - move to same device as input tensors
+    device = y_pred.device
+    T1 = torch.log(torch.tensor(5.0, device=device))    # ln(5)
+    T2 = torch.log(torch.tensor(50.0, device=device))   # ln(50)
+    T3 = torch.log(torch.tensor(100.0, device=device))  # ln(100)
 
     # Base loss (MSE here, but could be MAE or Huber)
     base_loss = (y_pred - y_true) ** 2
@@ -1107,7 +1108,6 @@ class Cond_Encoder_1234(nn.Module):
         # Apply scaled sigmoid only to toxicity part
         toxicity_output = torch.sigmoid(toxicity_raw) * np.log(100000) 
         # toxicity_output = toxicity_raw # WITHOUT BOUNDING
-        # toxicity_output = 1.0 / (torch.sigmoid(toxicity_raw) * np.log(100000) + 1e-8)  # Add small epsilon to avoid division by zero
         # Concatenate back together
         final_output = torch.cat([embedding_output, toxicity_output, morgan_output, filtered_morgan_output], dim=1)
         
@@ -1886,7 +1886,6 @@ def create_dataset_tensors_condenc_1234e1e2(spectra_dataset, embedding_df, morga
     spectra_with_ext_tensor = torch.Tensor(spectra_with_ext.values).to(device)
     embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
     log_tox_tensor = torch.Tensor(spectra_dataset["log_response"].values).unsqueeze(1).to(device)
-    # log_tox_tensor = torch.Tensor(1.0 / spectra_dataset["log_response"].values).unsqueeze(1).to(device)
     morgan_tensor = torch.Tensor([morgan_df.loc[morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
     filtered_morgan_tensor = torch.Tensor([filtered_morgan_df.loc[filtered_morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
     spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
