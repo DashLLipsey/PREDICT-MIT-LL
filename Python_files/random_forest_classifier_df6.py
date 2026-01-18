@@ -4,6 +4,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# Machine Learning packages
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, f1_score, accuracy_score
+import pickle
+
 # Non-basic package imports
 import torch
 import torch.nn as nn
@@ -16,7 +21,6 @@ from fcd_torch import FCD
 import rdkit
 from collections import Counter
 import gc
-import pickle
 import wandb
 
 # Add the Python_files directory to the Python path
@@ -72,35 +76,19 @@ def parse_dataset_name(dataset_name):
     
     return bin_size, threshold
 
-# Storage for conditional encoder results
-cond_encoder_results = [] 
+# Storage for random forest results
+rf_results = [] 
 
 # Model parameters
-output_size = None  # Will be set dynamically based on data
-num_layers = 5
-batch_size = 256
-epochs = 300
-lr = 0.0001
-lambda1 = 1
-lambda2 = 5
-lambda3 = 1  # For regular Morgan fingerprints
-lambda4 = 1  # For filtered Morgan fingerprints
+n_estimators = 100
+random_state = 42
+max_depth = None
+min_samples_split = 2
+min_samples_leaf = 1
 
-# Loss functions
-criterion1 = nn.MSELoss()  # ChemNet embeddings
-criterion2 = CrossEntropyLoss()  # Toxicity classification
-criterion3 = nn.MSELoss()  # Morgan fingerprints
-criterion4 = nn.MSELoss()  # Filtered Morgan fingerprints
-
-# CONDITIONAL ENCODER TRAINING LOOP - Process all grid search datasets
-print("=== CONDITIONAL ENCODER (ChemNet + Toxicity Classification + Morgan + Filtered Morgan + Group + CE_clean) TRAINING ===")
+# RANDOM FOREST CLASSIFICATION TRAINING LOOP - Process all grid search datasets
+print("=== RANDOM FOREST EPA CLASSIFICATION TRAINING ===")
 print(f"Super test SMILES to remove from training: {len(super_test_smiles)}")
-
-# Set up device and load all reference datasets
-device = fd.set_up_gpu()
-name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_chemnet.parquet")
-morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_morganfp.parquet")
-filtered_morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_filtered_morganfp.parquet")
 
 # Load the original dataset for response mapping
 df6_subset = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_subset.parquet")
@@ -113,21 +101,8 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
 # Allow only range of interest as given by Rod/Sasha
-# allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
-# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1']
-
-# allowed_bin_prefixes = ['bin0_1_', 'bin10_', 'bin25_', 'bin50_']
 allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1']
-
-# allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
-# allowed_threshold_suffixes = ['thresh_zero']
 allowed_bin_prefixes = ['bin100_', 'bin200_', 'bin500_']
-# Allow all bin sizes and thresholds
-# allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
-#                         'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_']
-# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
-#                              'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
-#                              'thresh50', 'thresh100']
 
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
@@ -145,12 +120,6 @@ print(f"Group mapping created with {len(id_to_group)} entries")
 print("Creating CE_clean mapping from df6_spectra...")
 id_to_ce_clean = dict(zip(df6_spectra['index_id'], df6_spectra['CE_clean']))
 print(f"CE_clean mapping created with {len(id_to_ce_clean)} entries")
-
-# Calculate output size from the fingerprint data
-regular_morgan_bits = morgan_df.shape[1] - 1  # Subtract 1 for SMILES_spectra column
-filtered_morgan_bits = filtered_morgan_df.shape[1] - 1  # Subtract 1 for SMILES_spectra column
-output_size = 512 + 4 + regular_morgan_bits + filtered_morgan_bits  # ChemNet + 4-class Toxicity + Morgan + Filtered Morgan
-print(f"Calculated output size: {output_size} (512 ChemNet + 4 Toxicity Classes + {regular_morgan_bits} Morgan + {filtered_morgan_bits} Filtered Morgan)")
 
 # Loop through each dataset and train one model, then evaluate on both full validation and super test sets
 for i, dataset_name in enumerate(sorted(dataset_names), 1):
@@ -214,71 +183,41 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         test_data_processed = fd.add_response_and_log_response(test_data.copy(), df6_subset, smiles_col='SMILES_spectra')
         test_data_processed = fd.add_epa_levels(test_data_processed)
 
-        # Create tensors for training
-        print("Creating training tensors...")
-        x_train_with_ext, y_train_emb, y_train_tox_class, y_train_morgan, y_train_filtered_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2_class(
-                train_data_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-10)
-
-        x_val_with_ext, y_val_emb, y_val_tox_class, y_val_morgan, y_val_filtered_morgan, val_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2_class(
-            test_data_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-10)
-
-        # Create model
-        actual_input_size = x_train_with_ext.shape[1]
-        print(f"Creating model with input size: {actual_input_size}")
-
-        cond_encoder_current = fd.Cond_Encoder_1234(input_size=actual_input_size,
-                                                             output_size=output_size, 
-                                                             num_layers=num_layers).to(device)
+        # Prepare features and targets for Random Forest
+        # Extract spectra features (columns 1 to -10, excluding metadata columns)
+        feature_cols = train_data_processed.columns[1:-10]  # Spectra features
+        X_train = train_data_processed[feature_cols].values
+        y_train = train_data_processed['EPA_level'].values
         
-        # Create DataLoaders for training
-        train_dataset = TensorDataset(x_train_with_ext, y_train_emb, y_train_tox_class, y_train_morgan, y_train_filtered_morgan, train_indices_tensor)
-        val_dataset = TensorDataset(x_val_with_ext, y_val_emb, y_val_tox_class, y_val_morgan, y_val_filtered_morgan, val_indices_tensor)
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=False, num_workers=0)
-        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, pin_memory=False, num_workers=0)
-                
-        # Parse dataset parameters for wandb config
+        X_test = test_data_processed[feature_cols].values
+        y_test = test_data_processed['EPA_level'].values
+
+        print(f"Training set shape: {X_train.shape}, Target shape: {y_train.shape}")
+        print(f"Test set shape: {X_test.shape}, Target shape: {y_test.shape}")
+
+        # Parse dataset parameters
         bin_size, threshold = parse_dataset_name(dataset_name)
         
-        # Create wandb config
-        chemnet_tox_morgan_config = {
-            'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
-            'wandb_project': 'MIT-Lincoln-Lab',
-            'wandb_name': f"cond_enc_class_filtered_df6_{dataset_name}",
-            'gpu': True,
-            'encoder_type': "Conditional Encoder ChemNet + Toxicity Classification + Morgan + Filtered Morgan + Group + CE_clean",
-            'batch_size': batch_size,
-            'output_size': output_size,
-            'num_layers': num_layers,
-            'learning_rate': lr,
-            'epochs': epochs,
-            'lambda1': lambda1,
-            'lambda2': lambda2,
-            'lambda3': lambda3,
-            'lambda4': lambda4,
-            'Bin': bin_size,
-            'Threshold': threshold,
-            'super_test_removed': True,
-        }
-
-        # ==================== TRAIN MODEL ==================== #
-        print("Training model...")
-        trained_cond_encoder = fd.train_model_condenc_1234e1e2_class(
-            model=cond_encoder_current,
-            train_data=train_loader,
-            val_data=val_loader,
-            epochs=epochs,
-            learning_rate=lr,
-            criterion1=criterion1,
-            criterion2=criterion2,
-            criterion3=criterion3,
-            criterion4=criterion4,
-            lambda1=lambda1,
-            lambda2=lambda2,
-            lambda3=lambda3,
-            lambda4=lambda4,
-            device=device,
-            config=chemnet_tox_morgan_config
+        # ==================== TRAIN RANDOM FOREST MODEL ==================== #
+        print("Training Random Forest model...")
+        rf_model = RandomForestClassifier(
+            n_estimators=n_estimators,
+            random_state=random_state,
+            max_depth=max_depth,
+            min_samples_split=min_samples_split,
+            min_samples_leaf=min_samples_leaf,
+            n_jobs=-1  # Use all available cores
         )
+        
+        rf_model.fit(X_train, y_train)
+        
+        # Evaluate on test set
+        y_test_pred = rf_model.predict(X_test)
+        test_accuracy = accuracy_score(y_test, y_test_pred)
+        test_macro_f1 = f1_score(y_test, y_test_pred, average='macro')
+        
+        print(f"Test Accuracy: {test_accuracy:.4f}")
+        print(f"Test Macro F1: {test_macro_f1:.4f}")
         
         # ==================== EVALUATE ON FULL VALIDATION SET ==================== #
         print("Evaluating on full validation set...")
@@ -288,45 +227,44 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         filtered_dataset_full_processed = fd.add_response_and_log_response(filtered_dataset_full.copy(), df6_subset, smiles_col='SMILES_spectra')
         filtered_dataset_full_processed = fd.add_epa_levels(filtered_dataset_full_processed)
         
-        # Create tensors for full validation set
-        x_full_val_with_ext, y_full_val_emb, y_full_val_tox_class, y_full_val_morgan, y_full_val_filtered_morgan, full_val_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2_class(
-            filtered_dataset_full_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-10)
+        # Extract features for full validation set
+        X_full_val = filtered_dataset_full_processed[feature_cols].values
+        y_full_val = filtered_dataset_full_processed['EPA_level'].values
         
         # Generate predictions on full validation set
-        cond_encoder_current.eval()
-        with torch.no_grad():
-            full_val_predictions = cond_encoder_current(x_full_val_with_ext).cpu().numpy()
+        full_val_predictions = rf_model.predict(X_full_val)
+        full_val_probabilities = rf_model.predict_proba(X_full_val)
+        
+        # Calculate metrics for full validation set
+        full_val_accuracy = accuracy_score(y_full_val, full_val_predictions)
+        full_val_macro_f1 = f1_score(y_full_val, full_val_predictions, average='macro')
+        
+        print(f"Full Validation Accuracy: {full_val_accuracy:.4f}")
+        print(f"Full Validation Macro F1: {full_val_macro_f1:.4f}")
 
         # Create output DataFrame for full validation set
-        emb_cols = [f'cond_emb_{j}' for j in range(512)]
-        morgan_cols = [f'cond_morgan_{j}' for j in range(regular_morgan_bits)]
-        filtered_morgan_cols = [f'cond_filtered_morgan_{j}' for j in range(filtered_morgan_bits)]
+        full_val_output_df = pd.DataFrame()
         
-        full_val_output_df = pd.DataFrame(full_val_predictions[:, :512], columns=emb_cols)
+        # Add predictions and probabilities
+        full_val_output_df['rf_predicted_epa_class'] = full_val_predictions
         
-        # Add toxicity classification predictions (4 logits)
-        tox_logits_cols = [f'cond_tox_logit_{j}' for j in range(4)]
-        full_val_output_df[tox_logits_cols] = full_val_predictions[:, 512:516]
-        
-        # Add predicted class (argmax of logits)
-        full_val_output_df['cond_tox_pred_class'] = np.argmax(full_val_predictions[:, 512:516], axis=1)
-        
-        # Add Morgan fingerprint predictions
-        morgan_start_idx = 516
-        morgan_end_idx = morgan_start_idx + regular_morgan_bits
-        full_val_morgan_pred_df = pd.DataFrame(full_val_predictions[:, morgan_start_idx:morgan_end_idx], columns=morgan_cols)
-        full_val_output_df = pd.concat([full_val_output_df, full_val_morgan_pred_df], axis=1)
-        
-        # Add Filtered Morgan fingerprint predictions
-        filtered_morgan_start_idx = morgan_end_idx
-        full_val_filtered_morgan_pred_df = pd.DataFrame(full_val_predictions[:, filtered_morgan_start_idx:], columns=filtered_morgan_cols)
-        full_val_output_df = pd.concat([full_val_output_df, full_val_filtered_morgan_pred_df], axis=1)
+        # Add class probabilities
+        class_labels = rf_model.classes_
+        for i, class_label in enumerate(class_labels):
+            full_val_output_df[f'rf_prob_class_{class_label}'] = full_val_probabilities[:, i]
         
         # Add metadata
         full_val_output_df['SMILES_spectra'] = filtered_dataset_full_processed['SMILES_spectra'].values
         full_val_output_df['Response'] = filtered_dataset_full_processed['Response'].values
         full_val_output_df['log_response'] = filtered_dataset_full_processed['log_response'].values
+        full_val_output_df['EPA_level'] = filtered_dataset_full_processed['EPA_level'].values
         full_val_output_df['index_id'] = filtered_dataset_full_processed['index'].values
+        
+        # Add performance metrics
+        full_val_output_df['accuracy'] = full_val_accuracy
+        full_val_output_df['macro_f1'] = full_val_macro_f1
+        full_val_output_df['bin_size'] = bin_size
+        full_val_output_df['threshold'] = threshold
         
         # Save full validation set predictions
         if 'thresh_zero' in dataset_name:
@@ -338,10 +276,10 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             thresh_part = parts[1].split('_df_spectra')[0]
             threshold_part = f"thresh{thresh_part}"
         
-        full_val_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_1234e1e2_classification_df6"
+        full_val_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/random_forest_df6"
         os.makedirs(full_val_output_folder, exist_ok=True)
 
-        full_val_predictions_filename = f"cond_enc_{bin_part}_{threshold_part}_df_spectra.parquet"
+        full_val_predictions_filename = f"rf_{bin_part}_{threshold_part}_df_spectra.parquet"
         full_val_predictions_path = os.path.join(full_val_output_folder, full_val_predictions_filename)
         
         try:
@@ -370,42 +308,49 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
             super_test_processed = fd.add_epa_levels(super_test_processed)
             
-            # Create tensors for super test set
-            x_super_test_with_ext, y_super_test_emb, y_super_test_tox_class, y_super_test_morgan, y_super_test_filtered_morgan, super_test_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2_class(
-                super_test_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-10)
+            # Extract features for super test set
+            X_super_test = super_test_processed[feature_cols].values
+            y_super_test = super_test_processed['EPA_level'].values
             
             # Generate predictions on super test set
-            with torch.no_grad():
-                super_test_predictions = cond_encoder_current(x_super_test_with_ext).cpu().numpy()
+            super_test_predictions = rf_model.predict(X_super_test)
+            super_test_probabilities = rf_model.predict_proba(X_super_test)
+            
+            # Calculate metrics for super test set
+            super_test_accuracy = accuracy_score(y_super_test, super_test_predictions)
+            super_test_macro_f1 = f1_score(y_super_test, super_test_predictions, average='macro')
+            
+            print(f"Super Test Accuracy: {super_test_accuracy:.4f}")
+            print(f"Super Test Macro F1: {super_test_macro_f1:.4f}")
 
             # Create super test output DataFrame
-            super_test_output_df = pd.DataFrame(super_test_predictions[:, :512], columns=emb_cols)
+            super_test_output_df = pd.DataFrame()
             
-            # Add toxicity classification predictions (4 logits)
-            super_test_output_df[tox_logits_cols] = super_test_predictions[:, 512:516]
+            # Add predictions and probabilities
+            super_test_output_df['rf_predicted_epa_class'] = super_test_predictions
             
-            # Add predicted class (argmax of logits)
-            super_test_output_df['cond_tox_pred_class'] = np.argmax(super_test_predictions[:, 512:516], axis=1)
-            
-            # Add Morgan fingerprint predictions
-            super_test_morgan_pred_df = pd.DataFrame(super_test_predictions[:, morgan_start_idx:morgan_end_idx], columns=morgan_cols)
-            super_test_output_df = pd.concat([super_test_output_df, super_test_morgan_pred_df], axis=1)
-            
-            # Add Filtered Morgan fingerprint predictions
-            super_test_filtered_morgan_pred_df = pd.DataFrame(super_test_predictions[:, filtered_morgan_start_idx:], columns=filtered_morgan_cols)
-            super_test_output_df = pd.concat([super_test_output_df, super_test_filtered_morgan_pred_df], axis=1)
+            # Add class probabilities
+            for i, class_label in enumerate(class_labels):
+                super_test_output_df[f'rf_prob_class_{class_label}'] = super_test_probabilities[:, i]
             
             # Add metadata
             super_test_output_df['SMILES_spectra'] = super_test_processed['SMILES_spectra'].values
             super_test_output_df['Response'] = super_test_processed['Response'].values
             super_test_output_df['log_response'] = super_test_processed['log_response'].values
+            super_test_output_df['EPA_level'] = super_test_processed['EPA_level'].values
             super_test_output_df['index_id'] = super_test_processed['index'].values
             
+            # Add performance metrics
+            super_test_output_df['accuracy'] = super_test_accuracy
+            super_test_output_df['macro_f1'] = super_test_macro_f1
+            super_test_output_df['bin_size'] = bin_size
+            super_test_output_df['threshold'] = threshold
+            
             # Save super test set predictions
-            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_1234e1e2_classification_df6_super_test"
+            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/random_forest_df6_super_test"
             os.makedirs(super_test_output_folder, exist_ok=True)
 
-            super_test_predictions_filename = f"super_test_cond_enc_{bin_part}_{threshold_part}_df_spectra.parquet"
+            super_test_predictions_filename = f"super_test_rf_{bin_part}_{threshold_part}_df_spectra.parquet"
             super_test_predictions_path = os.path.join(super_test_output_folder, super_test_predictions_filename)
             
             try:
@@ -418,21 +363,47 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         else:
             print("No super test samples found in this dataset")
             
+        # Store results for summary
+        rf_results.append({
+            'dataset_name': dataset_name,
+            'bin_size': bin_size,
+            'threshold': threshold,
+            'test_accuracy': test_accuracy,
+            'test_macro_f1': test_macro_f1,
+            'full_val_accuracy': full_val_accuracy,
+            'full_val_macro_f1': full_val_macro_f1,
+            'super_test_accuracy': super_test_accuracy if len(super_test_df) > 0 else None,
+            'super_test_macro_f1': super_test_macro_f1 if len(super_test_df) > 0 else None,
+            'super_test_samples': len(super_test_df) if len(super_test_df) > 0 else 0
+        })
+            
         print(f"Completed processing {dataset_name}")
-
-        # Clear GPU memory after each dataset
-        del x_train_with_ext, x_val_with_ext, y_train_emb, y_train_tox_class, y_train_morgan, y_train_filtered_morgan
-        del y_val_emb, y_val_tox_class, y_val_morgan, y_val_filtered_morgan, train_indices_tensor, val_indices_tensor
-        del x_full_val_with_ext, y_full_val_emb, y_full_val_tox_class, y_full_val_morgan, y_full_val_filtered_morgan, full_val_indices_tensor
-        if 'x_super_test_with_ext' in locals():
-            del x_super_test_with_ext, y_super_test_emb, y_super_test_tox_class, y_super_test_morgan, y_super_test_filtered_morgan, super_test_indices_tensor
-        del cond_encoder_current, trained_cond_encoder
-        torch.cuda.empty_cache()
+        
+        # Clear memory after each dataset
+        del X_train, X_test, y_train, y_test, X_full_val, y_full_val
+        if 'X_super_test' in locals():
+            del X_super_test, y_super_test
+        del rf_model
+        gc.collect()
         
     except Exception as e:
         print(f"Error processing {dataset_name}: {str(e)}")
-        torch.cuda.empty_cache()
+        gc.collect()
         continue
 
-print(f"\n=== CONDITIONAL ENCODER CLASSIFICATION TRAINING AND EVALUATION COMPLETED ===")
-print(f"Successfully processed datasets")
+print(f"\n=== RANDOM FOREST CLASSIFICATION TRAINING AND EVALUATION COMPLETED ===")
+print(f"Successfully processed {len(rf_results)} datasets")
+
+# Save summary results
+if rf_results:
+    results_df = pd.DataFrame(rf_results)
+    results_summary_path = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/random_forest_df6/rf_results_summary.parquet"
+    results_df.to_parquet(results_summary_path, index=False)
+    print(f"✓ Saved results summary to {results_summary_path}")
+    
+    # Print summary statistics
+    print("\n=== RESULTS SUMMARY ===")
+    print(f"Average Test Macro F1: {results_df['test_macro_f1'].mean():.4f}")
+    print(f"Average Full Validation Macro F1: {results_df['full_val_macro_f1'].mean():.4f}")
+    if results_df['super_test_macro_f1'].notna().any():
+        print(f"Average Super Test Macro F1: {results_df['super_test_macro_f1'].mean():.4f}")

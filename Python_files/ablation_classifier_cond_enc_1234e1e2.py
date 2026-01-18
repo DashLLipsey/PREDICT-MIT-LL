@@ -81,10 +81,10 @@ num_layers = 5
 batch_size = 256
 epochs = 300
 lr = 0.0001
-lambda1 = 1
-lambda2 = 5
-lambda3 = 1  # For regular Morgan fingerprints
-lambda4 = 1  # For filtered Morgan fingerprints
+lambda1 = 0
+lambda2 = 1
+lambda3 = 0  # For regular Morgan fingerprints
+lambda4 = 0  # For filtered Morgan fingerprints
 
 # Loss functions
 criterion1 = nn.MSELoss()  # ChemNet embeddings
@@ -93,7 +93,7 @@ criterion3 = nn.MSELoss()  # Morgan fingerprints
 criterion4 = nn.MSELoss()  # Filtered Morgan fingerprints
 
 # CONDITIONAL ENCODER TRAINING LOOP - Process all grid search datasets
-print("=== CONDITIONAL ENCODER (ChemNet + Toxicity Classification + Morgan + Filtered Morgan + Group + CE_clean) TRAINING ===")
+print("=== ABLATION CLASSIFIER (ChemNet + Toxicity Classification + Morgan + Filtered Morgan + Group + CE_clean) TRAINING ===")
 print(f"Super test SMILES to remove from training: {len(super_test_smiles)}")
 
 # Set up device and load all reference datasets
@@ -338,7 +338,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             thresh_part = parts[1].split('_df_spectra')[0]
             threshold_part = f"thresh{thresh_part}"
         
-        full_val_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_1234e1e2_classification_df6"
+        full_val_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/ablation_classifier_1234e1e2_df6"
         os.makedirs(full_val_output_folder, exist_ok=True)
 
         full_val_predictions_filename = f"cond_enc_{bin_part}_{threshold_part}_df_spectra.parquet"
@@ -402,7 +402,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             super_test_output_df['index_id'] = super_test_processed['index'].values
             
             # Save super test set predictions
-            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_1234e1e2_classification_df6_super_test"
+            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/ablation_classifier_1234e1e2_df6_super_test"
             os.makedirs(super_test_output_folder, exist_ok=True)
 
             super_test_predictions_filename = f"super_test_cond_enc_{bin_part}_{threshold_part}_df_spectra.parquet"
