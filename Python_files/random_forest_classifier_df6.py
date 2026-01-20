@@ -76,6 +76,23 @@ def parse_dataset_name(dataset_name):
     
     return bin_size, threshold
 
+def response_to_epa_class(response_value):
+    """Convert Response value to EPA toxicity class (1-4)"""
+    if response_value <= 50:
+        return 1  # EPA Level 1
+    elif response_value <= 500:
+        return 2  # EPA Level 2
+    elif response_value <= 5000:
+        return 3  # EPA Level 3
+    else:
+        return 4  # EPA Level 4
+
+def add_epa_levels_for_rf(df, response_col='Response'):
+    """Add EPA levels as integer classes for Random Forest classification"""
+    df = df.copy()
+    df['EPA_level'] = df[response_col].apply(response_to_epa_class)
+    return df
+
 # Storage for random forest results
 rf_results = [] 
 
@@ -100,9 +117,17 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 # Get all dataset files from the grid search folder
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
+# Allow all bin sizes and thresholds
+allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_', 'bin25_', 'bin50_', 
+                        'bin100_', 'bin200_']
+allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
+                             'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
+                             'thresh50', 'thresh100']
+
+
 # Allow only range of interest as given by Rod/Sasha
-allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1']
-allowed_bin_prefixes = ['bin100_', 'bin200_', 'bin500_']
+# allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
+# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1']
 
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
@@ -178,10 +203,10 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         
         # Process datasets - add response and EPA levels
         train_data_processed = fd.add_response_and_log_response(train_data.copy(), df6_subset, smiles_col='SMILES_spectra')
-        train_data_processed = fd.add_epa_levels(train_data_processed)
+        train_data_processed = add_epa_levels_for_rf(train_data_processed)
         
         test_data_processed = fd.add_response_and_log_response(test_data.copy(), df6_subset, smiles_col='SMILES_spectra')
-        test_data_processed = fd.add_epa_levels(test_data_processed)
+        test_data_processed = add_epa_levels_for_rf(test_data_processed)
 
         # Prepare features and targets for Random Forest
         # Extract spectra features (columns 1 to -10, excluding metadata columns)
@@ -225,7 +250,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         filtered_dataset_full = filtered_dataset.copy()
         filtered_dataset_full['index'] = range(len(filtered_dataset_full))
         filtered_dataset_full_processed = fd.add_response_and_log_response(filtered_dataset_full.copy(), df6_subset, smiles_col='SMILES_spectra')
-        filtered_dataset_full_processed = fd.add_epa_levels(filtered_dataset_full_processed)
+        filtered_dataset_full_processed = add_epa_levels_for_rf(filtered_dataset_full_processed)
         
         # Extract features for full validation set
         X_full_val = filtered_dataset_full_processed[feature_cols].values
@@ -306,7 +331,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             # Process super test set
             super_test_df['index'] = range(len(super_test_df))
             super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
-            super_test_processed = fd.add_epa_levels(super_test_processed)
+            super_test_processed = add_epa_levels_for_rf(super_test_processed)
             
             # Extract features for super test set
             X_super_test = super_test_processed[feature_cols].values

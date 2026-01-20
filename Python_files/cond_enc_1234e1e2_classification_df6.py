@@ -81,10 +81,10 @@ num_layers = 5
 batch_size = 256
 epochs = 300
 lr = 0.0001
-lambda1 = 1
+lambda1 = 2
 lambda2 = 5
 lambda3 = 1  # For regular Morgan fingerprints
-lambda4 = 1  # For filtered Morgan fingerprints
+lambda4 = 5  # For filtered Morgan fingerprints
 
 # Loss functions
 criterion1 = nn.MSELoss()  # ChemNet embeddings
@@ -117,17 +117,21 @@ dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parqu
 # allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1']
 
 # allowed_bin_prefixes = ['bin0_1_', 'bin10_', 'bin25_', 'bin50_']
-allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1']
+# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1']
 
 # allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
 # allowed_threshold_suffixes = ['thresh_zero']
-allowed_bin_prefixes = ['bin100_', 'bin200_', 'bin500_']
+# allowed_bin_prefixes = ['bin100_', 'bin200_', 'bin500_']
 # Allow all bin sizes and thresholds
+
 # allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
-#                         'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_']
+#                         'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_'] # 'bin0_05' 
 # allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
 #                              'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
 #                              'thresh50', 'thresh100']
+# Allow all bin sizes and thresholds
+allowed_bin_prefixes = ['bin1_'] 
+allowed_threshold_suffixes = ['thresh0_05']
 
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
@@ -206,7 +210,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         # Add index column
         train_data['index'] = range(len(train_data))
         test_data['index'] = range(len(test_data))
-        
+                    
         # Process datasets - add response and EPA levels
         train_data_processed = fd.add_response_and_log_response(train_data.copy(), df6_subset, smiles_col='SMILES_spectra')
         train_data_processed = fd.add_epa_levels(train_data_processed)
