@@ -79,7 +79,7 @@ cond_encoder_results = []
 output_size = None  # Will be set dynamically based on data
 num_layers = 5
 batch_size = 256
-epochs = 300
+epochs = 250
 lr = 0.0001
 lambda1 = 0
 lambda2 = 1
@@ -113,8 +113,8 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
 # Allow only range of interest as given by Rod/Sasha
-# allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
-# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1']
+allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
+allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1']
 
 # # Allow all bin sizes and thresholds
 # allowed_bin_prefixes = [ 'bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
@@ -124,8 +124,8 @@ dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parqu
 #                              'thresh50', 'thresh100']
 
 # Allow all bin sizes and thresholds
-allowed_bin_prefixes = ['bin1_'] 
-allowed_threshold_suffixes = ['thresh0_05']
+# allowed_bin_prefixes = ['bin1_'] 
+# allowed_threshold_suffixes = ['thresh0_05']
 
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
@@ -200,6 +200,9 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         
         train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
         test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
+        
+        # Create set of training indices for later tracking
+        train_indices_set = set(train_indices)
         
         # Add index column
         train_data['index'] = range(len(train_data))
@@ -282,13 +285,30 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         print("Evaluating on full validation set...")
         # Prepare full filtered dataset
         filtered_dataset_full = filtered_dataset.copy()
+        
+        # Create train indicator mapping based on original index
+        # 1 = training spectra, 0 = validation/test spectra
+        train_indicator_map = {}
+        for idx in filtered_dataset_full.index:
+            train_indicator_map[idx] = 1 if idx in train_indices_set else 0
+        
+        # Reset index and add sequential index column
+        filtered_dataset_full = filtered_dataset_full.reset_index(drop=False, names=['original_index'])
         filtered_dataset_full['index'] = range(len(filtered_dataset_full))
+        
+        # Process dataset
         filtered_dataset_full_processed = fd.add_response_and_log_response(filtered_dataset_full.copy(), df6_subset, smiles_col='SMILES_spectra')
         filtered_dataset_full_processed = fd.add_epa_levels(filtered_dataset_full_processed)
         
+        # Add train indicator using the original index mapping
+        filtered_dataset_full_processed['train'] = filtered_dataset_full_processed['original_index'].map(train_indicator_map).fillna(0).astype(int)
+        
+        # Create a copy for tensor creation (without metadata columns that shouldn't be tensors)
+        filtered_dataset_for_tensors = filtered_dataset_full_processed.drop(columns=['original_index', 'train']).copy()
+        
         # Create tensors for full validation set
         x_full_val_with_ext, y_full_val_emb, y_full_val_tox_class, y_full_val_morgan, y_full_val_filtered_morgan, full_val_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2_class(
-            filtered_dataset_full_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-10)
+            filtered_dataset_for_tensors, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-10)
         
         # Generate predictions on full validation set
         cond_encoder_current.eval()
@@ -325,6 +345,12 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         full_val_output_df['Response'] = filtered_dataset_full_processed['Response'].values
         full_val_output_df['log_response'] = filtered_dataset_full_processed['log_response'].values
         full_val_output_df['index_id'] = filtered_dataset_full_processed['index'].values
+        full_val_output_df['train'] = filtered_dataset_full_processed['train'].values
+        
+        # Verify train column
+        train_count = full_val_output_df['train'].sum()
+        val_count = len(full_val_output_df) - train_count
+        print(f"Train column added: {train_count} training samples, {val_count} validation samples")
         
         # Save full validation set predictions
         if 'thresh_zero' in dataset_name:
@@ -398,6 +424,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             super_test_output_df['Response'] = super_test_processed['Response'].values
             super_test_output_df['log_response'] = super_test_processed['log_response'].values
             super_test_output_df['index_id'] = super_test_processed['index'].values
+            super_test_output_df['train'] = 0  # Super test samples were not in training set
             
             # Save super test set predictions
             super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/ablation_classifier_1234e1e2_df6_super_test"
