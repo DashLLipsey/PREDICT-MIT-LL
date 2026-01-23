@@ -79,11 +79,11 @@ cond_encoder_results = []
 output_size = None  # Will be set dynamically based on data
 num_layers = 5
 batch_size = 256
-epochs = 250
+epochs = 100
 lr = 0.0001
-lambda1 = 1
-lambda2 = 5
-lambda3 = 1  # For regular Morgan fingerprints
+lambda1 = 1 # For ChemNet embeddings
+lambda2 = 1 # For toxicity
+lambda3 = 1 # For regular Morgan fingerprints
 lambda4 = 1 # For filtered Morgan fingerprints
 
 # Loss functions
@@ -99,12 +99,12 @@ print(f"Super test SMILES to remove from training: {len(super_test_smiles)}")
 # Set up device
 device = fd.set_up_gpu()
 
-# # Load in internal condition true values
+# Load in internal condition true values
 name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_chemnet.parquet")
 morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_morganfp.parquet")
 filtered_morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_filtered_morganfp.parquet")
 
-# Load in internal conditions with noise
+# # Load in internal conditions with noise
 # name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_chemnet_noise.parquet")
 # morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_morganfp_noise.parquet")
 # filtered_morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_filtered_morganfp_noise.parquet")
@@ -119,9 +119,9 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 # Get all dataset files from the grid search folder
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
-# Allow only range of interest as given by Rod/Sasha
-allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
-allowed_threshold_suffixes = ['thresh0_01', 'thresh0_05', 'thresh0_1']
+# # Allow only range of interest as given by Rod/Sasha
+# allowed_bin_prefixes = ['bin0_5_', 'bin1_', 'bin2_', 'bin5_']
+# allowed_threshold_suffixes = ['thresh0_01', 'thresh0_05', 'thresh0_1']
 
 # allowed_bin_prefixes = ['bin0_1_', 'bin10_', 'bin25_', 'bin50_']
 # allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1']
@@ -137,8 +137,8 @@ allowed_threshold_suffixes = ['thresh0_01', 'thresh0_05', 'thresh0_1']
 #                              'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
 #                              'thresh50', 'thresh100']
 # Allow all bin sizes and thresholds
-# allowed_bin_prefixes = ['bin1_'] 
-# allowed_threshold_suffixes = ['thresh0_05']
+allowed_bin_prefixes = ['bin1_'] 
+allowed_threshold_suffixes = ['thresh0_05']
 
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
@@ -240,7 +240,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         actual_input_size = x_train_with_ext.shape[1]
         print(f"Creating model with input size: {actual_input_size}")
 
-        cond_encoder_current = fd.Cond_Encoder_1234(input_size=actual_input_size,
+        cond_encoder_current = fd.Cond_Encoder_1234_class(input_size=actual_input_size,
                                                              output_size=output_size, 
                                                              num_layers=num_layers).to(device)
         
@@ -276,7 +276,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
 
         # ==================== TRAIN MODEL ==================== #
         print("Training model...")
-        trained_cond_encoder = fd.train_model_condenc_1234e1e2_class(
+        trained_cond_encoder = fd.train_model_condenc_1234e1e2_class_mabal(
             model=cond_encoder_current,
             train_data=train_loader,
             val_data=val_loader,
