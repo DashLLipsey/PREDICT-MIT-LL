@@ -2979,7 +2979,7 @@ def parse_dataset_name(dataset_name, data_suffix='_df_spectra'):
 
 # ======================================= EPA Level Model ======================================= #
 
-# Conditional encoder with filtered Morgan fingerprints
+# Conditional encoder for classification with 4 tox classes
 class Cond_Encoder_1234_class(nn.Module):
     def __init__(self, input_size, output_size, num_layers):
         super().__init__()
@@ -3005,47 +3005,8 @@ class Cond_Encoder_1234_class(nn.Module):
         
         return final_output
 
-
-
-from torch.nn import CrossEntropyLoss
-criterion2 = CrossEntropyLoss()
-
 def train_model_condenc_1234e1e2_class(model, train_data, val_data, epochs, learning_rate, criterion1,  criterion2, criterion3, criterion4,
                                  lambda1, lambda2, lambda3, lambda4, device, config):
-    """
-    Train the conditional encoder model with a 4-class classification loss for toxicity (CrossEntropyLoss).
-    
-    Parameters:
-    ----------
-    model : nn.Module
-        The model to train.
-    train_data : DataLoader
-        The training dataset (batched as data loader).
-    val_data : DataLoader
-        The validation dataset (batched as data loader).
-    epochs : int
-        Number of training epochs.
-    learning_rate : float
-        Learning rate for the optimizer.
-    criterion1 : loss function
-        Loss function for embedding loss (e.g., MSELoss).
-    criterion3 : loss function
-        Loss function for Morgan fingerprint loss (e.g., MSELoss).
-    criterion4 : loss function
-        Loss function for filtered Morgan fingerprint loss (e.g., MSELoss).
-    lambda1 : float
-        Weight for embedding loss.
-    lambda2 : float
-        Weight for toxicity classification loss.
-    lambda3 : float
-        Weight for Morgan loss.
-    lambda4 : float
-        Weight for filtered Morgan loss.
-    device : torch.device
-        The device (CPU or GPU) to perform the training on.
-    config : dict
-        Configuration dictionary for wandb setup.
-    """
     # Define optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     
@@ -3326,11 +3287,10 @@ def add_epa_levels(df, response_col='Response', assign_func=assign_epa_level):
     return df
 
 
-### ================================== Weighted Classification ================================== ###
-
-# Modified Conditional encoder
-class Cond_Encoder_1234_class_weight(nn.Module):
-    def __init__(self, input_size, output_size, num_layers):
+### ================================== Normalized Classification ================================== ###
+# Modified model with dropout
+class Cond_Encoder_1234_class_dropout(nn.Module):
+    def __init__(self, input_size, output_size, num_layers, dropout_rate=0.3):
         super().__init__()
         layers = []
         layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
@@ -3338,75 +3298,148 @@ class Cond_Encoder_1234_class_weight(nn.Module):
             layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
             if i < num_layers - 1:
                 layers.append(nn.LeakyReLU(inplace=True))
+                layers.append(nn.Dropout(dropout_rate))  # ← ADD THIS LINE
         self.encoder = nn.Sequential(*layers)
 
     def forward(self, x):
         output = self.encoder(x)
         
-        # Split the output into four parts
-        embedding_output = output[:, :512]    # ChemNet embeddings (no activation)
-        toxicity_raw = output[:, 512:516]    # Now output 4 dimensions for 4 toxicity classes
-        morgan_output = output[:, 516:516+2048]  # Morgan fingerprints (2048 columns)
-        filtered_morgan_output = output[:, 516+2048:]  # Filtered Morgan fingerprints (remaining columns)
+        embedding_output = output[:, :512]
+        toxicity_output = output[:, 512:516]
+        morgan_output = output[:, 516:516+2048]
+        filtered_morgan_output = output[:, 516+2048:]
     
-        # No sigmoid for toxicity_raw as it will be used for cross entropy
-        toxicity_output = toxicity_raw
-    
-        # Concatenate back together
         final_output = torch.cat([embedding_output, toxicity_output, morgan_output, filtered_morgan_output], dim=1)
         
         return final_output
 
 
-# Function to calculate class-weighted loss for CrossEntropyLoss
-def class_weight_loss(predicted, target, class_weights):
+# Periodic recomputation normalization version full set of conditions (iap = initial and periodic)
+def train_model_condenc_1234e1e2_class_iap(model, train_data, val_data, epochs, learning_rate, 
+                                       criterion1, criterion2, criterion3, criterion4,
+                                       lambda1, lambda2, lambda3, lambda4, device, 
+                                       config, recompute_interval=50):
     """
-    Compute class-weighted cross-entropy loss.
-    
-    Parameters:
-    ----------
-    predicted : Tensor
-        Predicted logits (unnormalized).
-    target : Tensor
-        True labels.
-    class_weights : Tensor
-        Tensor of weights for each class.
-
-    Returns:
-    -------
-    Tensor
-        Weighted loss.
+    Train the conditional encoder model with periodic recomputation of normalization factors for each loss component.
+    recompute_interval : int
+        How often to recompute normalization factors (in epochs). Default: 50
     """
-    ce_loss = nn.CrossEntropyLoss(reduction='none')  # Obtain per-sample loss
-    loss = ce_loss(predicted, target)
-    weighted_loss = loss * class_weights[target]  # Multiply sample-wise loss by class weights
-    return weighted_loss.mean()  # Return mean loss
-
-def train_model_condenc_1234e1e2_class_bal(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, criterion4,
-                                 lambda1, lambda2, lambda3, lambda4, device, config):
+    # Define optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     
+    # Initialize wandb for logging
     wandb.init(entity=config['wandb_entity'],
                project=config['wandb_project'],
                config=config)
     
+    # Log recompute interval
+    wandb.config.update({"recompute_interval": recompute_interval})
+    
     # Initialize lists to store losses
     train_losses = []
     val_losses = []
-    train_embedding_losses = []
-    train_toxicity_losses = []
-    train_morgan_losses = []
-    train_filtered_morgan_losses = []
-    val_embedding_losses = []
-    val_toxicity_losses = []
-    val_morgan_losses = []
-    val_filtered_morgan_losses = []
     
-    # ============ NORMALIZATION SETUP ============
-    # Compute initial loss values for normalization
-    initial_losses = None
-    
+    # Initialize scale factors (will be computed in first epoch)
+    scale_factors = None
+
+    def compute_scale_factors(model, data_loader, num_batches=10):
+        """
+        Compute scale factors from a subset of the data.
+        
+        Parameters:
+        ----------
+        model : nn.Module
+            The model to evaluate
+        data_loader : DataLoader
+            The data to sample from
+        num_batches : int
+            Number of batches to use for estimation
+        
+        Returns:
+        -------
+        dict : Scale factors for each loss
+        """
+        model.eval()
+        temp_losses = {'loss1': [], 'loss2': [], 'loss3': [], 'loss4': []}
+        
+        with torch.no_grad():
+            for batch_idx, (batch_with_ext, true_embeddings, true_tox_class, true_morgan, true_filtered_morgan, _) in enumerate(data_loader):
+                if batch_idx >= num_batches:
+                    break
+                
+                batch_with_ext = batch_with_ext.to(device)
+                true_embeddings = true_embeddings.to(device)
+                true_tox_class = true_tox_class.to(device)
+                true_morgan = true_morgan.to(device)
+                true_filtered_morgan = true_filtered_morgan.to(device)
+                
+                batch_predicted_combined = model(batch_with_ext)
+                
+                # Embedding loss
+                batch_predicted_embeddings = batch_predicted_combined[:, :512]
+                loss1 = criterion1(batch_predicted_embeddings, true_embeddings)
+                
+                # Toxicity loss
+                batch_predicted_log_tox = batch_predicted_combined[:, 512:516]
+                loss2 = criterion2(batch_predicted_log_tox, true_tox_class)
+                
+                # Morgan loss
+                batch_predicted_morgan = batch_predicted_combined[:, 516:516 + 2048]
+                loss3 = criterion3(batch_predicted_morgan, true_morgan)
+                
+                # Filtered Morgan loss
+                batch_predicted_filtered_morgan = batch_predicted_combined[:, 516 + 2048:]
+                loss4 = criterion4(batch_predicted_filtered_morgan, true_filtered_morgan)
+                
+                temp_losses['loss1'].append(loss1.item())
+                temp_losses['loss2'].append(loss2.item())
+                temp_losses['loss3'].append(loss3.item())
+                temp_losses['loss4'].append(loss4.item())
+        
+        # Compute mean as scale factors
+        factors = {
+            'loss1': np.mean(temp_losses['loss1']),
+            'loss2': np.mean(temp_losses['loss2']),
+            'loss3': np.mean(temp_losses['loss3']),
+            'loss4': np.mean(temp_losses['loss4'])
+        }
+        
+        return factors
+
     for epoch in range(epochs):
+        # ============ RECOMPUTE SCALE FACTORS PERIODICALLY ============
+        if epoch % recompute_interval == 0:
+            if epoch == 0:
+                print("Computing initial scale factors...")
+            else:
+                print(f"\n=== Recomputing scale factors at epoch {epoch+1} ===")
+            
+            scale_factors = compute_scale_factors(model, train_data, num_batches=10)
+            
+            print(f"Scale factors:")
+            print(f"  ChemNet Embedding (loss1): {scale_factors['loss1']:.6f}")
+            print(f"  Toxicity Classification (loss2): {scale_factors['loss2']:.6f}")
+            print(f"  Morgan Fingerprint (loss3): {scale_factors['loss3']:.6f}")
+            print(f"  Filtered Morgan (loss4): {scale_factors['loss4']:.6f}")
+            
+            # Calculate and display relative contributions
+            total_lambda = lambda1 + lambda2 + lambda3 + lambda4
+            print(f"\nWith lambda weights (λ1={lambda1}, λ2={lambda2}, λ3={lambda3}, λ4={lambda4}):")
+            print(f"  ChemNet contribution: {lambda1 / total_lambda * 100:.1f}%")
+            print(f"  Toxicity contribution: {lambda2 / total_lambda * 100:.1f}%")
+            print(f"  Morgan contribution: {lambda3 / total_lambda * 100:.1f}%")
+            print(f"  Filtered Morgan contribution: {lambda4 / total_lambda * 100:.1f}%\n")
+            
+            # Log to wandb
+            wandb.log({
+                "scale_factor_loss1_epoch": scale_factors['loss1'],
+                "scale_factor_loss2_epoch": scale_factors['loss2'],
+                "scale_factor_loss3_epoch": scale_factors['loss3'],
+                "scale_factor_loss4_epoch": scale_factors['loss4'],
+                "epoch": epoch + 1
+            })
+        
+        # ============ TRAINING PHASE ============
         model.train()
         running_loss = 0.0
         running_embedding_loss = 0.0
@@ -3424,256 +3457,13 @@ def train_model_condenc_1234e1e2_class_bal(model, train_data, val_data, epochs, 
             optimizer.zero_grad()
             batch_predicted_combined = model(batch_with_ext)
 
-            # Calculate individual losses (UNWEIGHTED)
-            batch_predicted_embeddings = batch_predicted_combined[:, :512]
-            loss1 = criterion1(batch_predicted_embeddings, true_embeddings)
-
-            batch_predicted_log_tox = batch_predicted_combined[:, 512:516]
-            loss2 = criterion2(batch_predicted_log_tox, true_tox_class)
-
-            batch_predicted_morgan = batch_predicted_combined[:, 516:516 + 2048]
-            loss3 = criterion3(batch_predicted_morgan, true_morgan)
-
-            batch_predicted_filtered_morgan = batch_predicted_combined[:, 516 + 2048:]
-            loss4 = criterion4(batch_predicted_filtered_morgan, true_filtered_morgan)
-
-            # ============ CAPTURE INITIAL LOSSES (First Batch) ============
-            if initial_losses is None:
-                initial_losses = {
-                    'loss1': loss1.item(),
-                    'loss2': np.log(4),
-                    'loss3': loss3.item(),
-                    'loss4': loss4.item()
-                }
-                print(f"Initial losses for normalization:")
-                print(f"  ChemNet: {initial_losses['loss1']:.6f}")
-                print(f"  Toxicity: {initial_losses['loss2']:.6f}")
-                print(f"  Morgan: {initial_losses['loss3']:.6f}")
-                print(f"  Filtered Morgan: {initial_losses['loss4']:.6f}")
-            
-            # ============ NORMALIZE AND WEIGHT ============
-            # Normalize by initial values, then apply lambda weights
-            normalized_loss1 = loss1 / initial_losses['loss1']
-            normalized_loss2 = loss2 / initial_losses['loss2']
-            normalized_loss3 = loss3 / initial_losses['loss3']
-            normalized_loss4 = loss4 / initial_losses['loss4']
-            
-            weighted_loss1 = lambda1 * normalized_loss1
-            weighted_loss2 = lambda2 * normalized_loss2
-            weighted_loss3 = lambda3 * normalized_loss3
-            weighted_loss4 = lambda4 * normalized_loss4
-
-            # Total Loss
-            total_loss = weighted_loss1 + weighted_loss2 + weighted_loss3 + weighted_loss4
-
-            # Backpropagation
-            total_loss.backward()
-            optimizer.step()
-
-            # Accumulate losses for logging (log the weighted, normalized values)
-            running_loss += total_loss.item()
-            running_embedding_loss += weighted_loss1.item()
-            running_toxicity_loss += weighted_loss2.item()
-            running_morgan_loss += weighted_loss3.item()
-            running_filtered_morgan_loss += weighted_loss4.item()
-
-        # Calculate average losses per epoch
-        average_train_loss = running_loss / len(train_data)
-        average_train_embedding_loss = running_embedding_loss / len(train_data)
-        average_train_toxicity_loss = running_toxicity_loss / len(train_data)
-        average_train_morgan_loss = running_morgan_loss / len(train_data)
-        average_train_filtered_morgan_loss = running_filtered_morgan_loss / len(train_data)
-        
-        wandb.log({
-            "average_train_loss": average_train_loss,
-            "average_train_embedding_loss": average_train_embedding_loss,
-            "average_train_toxicity_loss": average_train_toxicity_loss,
-            "average_train_morgan_loss": average_train_morgan_loss,
-            "average_train_filtered_morgan_loss": average_train_filtered_morgan_loss,
-        })
-
-        # ============ VALIDATION PHASE ============
-        model.eval()
-        val_loss = 0.0
-        val_embedding_loss = 0.0
-        val_toxicity_loss = 0.0
-        val_morgan_loss = 0.0
-        val_filtered_morgan_loss = 0.0
-        
-        with torch.no_grad():
-            for val_batch_with_ext, val_true_embeddings, val_true_tox_class, val_true_morgan, val_true_filtered_morgan, _ in val_data:
-                val_batch_with_ext = val_batch_with_ext.to(device)
-                val_true_embeddings = val_true_embeddings.to(device)
-                val_true_tox_class = val_true_tox_class.to(device)
-                val_true_morgan = val_true_morgan.to(device)
-                val_true_filtered_morgan = val_true_filtered_morgan.to(device)
-
-                val_batch_predicted = model(val_batch_with_ext)
-
-                # Calculate individual losses
-                val_batch_predicted_embeddings = val_batch_predicted[:, :512]
-                val_batch_predicted_log_tox = val_batch_predicted[:, 512:516]
-                val_batch_predicted_morgan = val_batch_predicted[:, 516:516 + 2048]
-                val_batch_predicted_filtered_morgan = val_batch_predicted[:, 516 + 2048:]
-
-                val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
-                val_loss2 = criterion2(val_batch_predicted_log_tox, val_true_tox_class)
-                val_loss3 = criterion3(val_batch_predicted_morgan, val_true_morgan)
-                val_loss4 = criterion4(val_batch_predicted_filtered_morgan, val_true_filtered_morgan)
-
-                # Normalize and weight validation losses
-                val_normalized_loss1 = val_loss1 / initial_losses['loss1']
-                val_normalized_loss2 = val_loss2 / initial_losses['loss2']
-                val_normalized_loss3 = val_loss3 / initial_losses['loss3']
-                val_normalized_loss4 = val_loss4 / initial_losses['loss4']
-                
-                val_weighted_loss1 = lambda1 * val_normalized_loss1
-                val_weighted_loss2 = lambda2 * val_normalized_loss2
-                val_weighted_loss3 = lambda3 * val_normalized_loss3
-                val_weighted_loss4 = lambda4 * val_normalized_loss4
-
-                # Accumulate validation losses
-                val_loss += val_weighted_loss1.item() + val_weighted_loss2.item() + val_weighted_loss3.item() + val_weighted_loss4.item()
-                val_embedding_loss += val_weighted_loss1.item()
-                val_toxicity_loss += val_weighted_loss2.item()
-                val_morgan_loss += val_weighted_loss3.item()
-                val_filtered_morgan_loss += val_weighted_loss4.item()
-
-        # Calculate average validation losses per epoch
-        average_val_loss = val_loss / len(val_data)
-        average_val_embedding_loss = val_embedding_loss / len(val_data)
-        average_val_toxicity_loss = val_toxicity_loss / len(val_data)
-        average_val_morgan_loss = val_morgan_loss / len(val_data)
-        average_val_filtered_morgan_loss = val_filtered_morgan_loss / len(val_data)
-        
-        wandb.log({
-            "average_val_loss": average_val_loss,
-            "average_val_embedding_loss": average_val_embedding_loss,
-            "average_val_toxicity_loss": average_val_toxicity_loss,
-            "average_val_morgan_loss": average_val_morgan_loss,
-            "average_val_filtered_morgan_loss": average_val_filtered_morgan_loss,
-        })
-
-        # Store losses
-        train_losses.append(average_train_loss)
-        val_losses.append(average_val_loss)
-        train_embedding_losses.append(average_train_embedding_loss)
-        train_toxicity_losses.append(average_train_toxicity_loss)
-        train_morgan_losses.append(average_train_morgan_loss)
-        train_filtered_morgan_losses.append(average_train_filtered_morgan_loss)
-        val_embedding_losses.append(average_val_embedding_loss)
-        val_toxicity_losses.append(average_val_toxicity_loss)
-        val_morgan_losses.append(average_val_morgan_loss)
-        val_filtered_morgan_losses.append(average_val_filtered_morgan_loss)
-
-        if epoch % 10 == 0 or epoch == epochs - 1:
-            print(f"Epoch [{epoch+1}/{epochs}]")
-            print(f"   Training loss: {average_train_loss:.6f}")
-            print(f"   ChemNet Loss: {average_train_embedding_loss:.6f}")
-            print(f"   Toxicity Loss: {average_train_toxicity_loss:.6f}") 
-            print(f"   Morgan Loss: {average_train_morgan_loss:.6f}")
-            print(f"   Filtered Morgan Loss: {average_train_filtered_morgan_loss:.6f}")
-            print(f"   Validation loss: {average_val_loss:.6f}")
-            print(f"   Val ChemNet Loss: {average_val_embedding_loss:.6f}")
-            print(f"   Val Toxicity Loss: {average_val_toxicity_loss:.6f}") 
-            print(f"   Val Morgan Loss: {average_val_morgan_loss:.6f}")
-            print(f"   Val Filtered Morgan Loss: {average_val_filtered_morgan_loss:.6f}")
-    
-    wandb.finish()
-    return (model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, 
-            train_morgan_losses, train_filtered_morgan_losses, val_embedding_losses, 
-            val_toxicity_losses, val_morgan_losses, val_filtered_morgan_losses)
-
-
-def train_model_condenc_1234e1e2_class_mabal(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, criterion4,
-                                 lambda1, lambda2, lambda3, lambda4, device, config):
-    """
-    Train the conditional encoder model with a 4-class classification loss for toxicity (CrossEntropyLoss).
-    Uses exponential moving average for loss normalization during first epoch.
-    
-    Parameters:
-    ----------
-    model : nn.Module
-        The model to train.
-    train_data : DataLoader
-        The training dataset (batched as data loader).
-    val_data : DataLoader
-        The validation dataset (batched as data loader).
-    epochs : int
-        Number of training epochs.
-    learning_rate : float
-        Learning rate for the optimizer.
-    criterion1 : loss function
-        Loss function for embedding loss (e.g., MSELoss).
-    criterion2 : loss function
-        Loss function for toxicity classification (e.g., CrossEntropyLoss).
-    criterion3 : loss function
-        Loss function for Morgan fingerprint loss (e.g., MSELoss).
-    criterion4 : loss function
-        Loss function for filtered Morgan fingerprint loss (e.g., MSELoss).
-    lambda1 : float
-        Weight for embedding loss.
-    lambda2 : float
-        Weight for toxicity classification loss.
-    lambda3 : float
-        Weight for Morgan loss.
-    lambda4 : float
-        Weight for filtered Morgan loss.
-    device : torch.device
-        The device (CPU or GPU) to perform the training on.
-    config : dict
-        Configuration dictionary for wandb setup.
-    """
-    # Define optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    
-    # Initialize wandb for logging
-    wandb.init(entity=config['wandb_entity'],
-               project=config['wandb_project'],
-               config=config)
-    
-    # Initialize lists to store losses
-    train_losses = []
-    val_losses = []
-    train_embedding_losses = []
-    train_toxicity_losses = []
-    train_morgan_losses = []
-    train_filtered_morgan_losses = []
-    val_embedding_losses = []
-    val_toxicity_losses = []
-    val_morgan_losses = []
-    val_filtered_morgan_losses = []
-
-    # ============ NORMALIZATION SETUP ============
-    # Initial losses will be computed using exponential moving average
-    initial_losses = None
-    ema_alpha = 0.1  # smoothing factor for EMA
-
-    for epoch in range(epochs):
-        model.train()
-        running_loss = 0.0
-        running_embedding_loss = 0.0
-        running_toxicity_loss = 0.0
-        running_morgan_loss = 0.0
-        running_filtered_morgan_loss = 0.0
-        
-        for batch_with_ext, true_embeddings, true_tox_class, true_morgan, true_filtered_morgan, _ in train_data:
-            batch_with_ext = batch_with_ext.to(device)
-            true_embeddings = true_embeddings.to(device)
-            true_tox_class = true_tox_class.to(device)  # Ensure toxicity class labels are integers for CrossEntropyLoss
-            true_morgan = true_morgan.to(device)
-            true_filtered_morgan = true_filtered_morgan.to(device)
-
-            optimizer.zero_grad()
-            batch_predicted_combined = model(batch_with_ext)
-
-            # Calculate individual losses (UNWEIGHTED)
+            # Calculate individual losses
             # Embedding Loss
             batch_predicted_embeddings = batch_predicted_combined[:, :512]
             loss1 = criterion1(batch_predicted_embeddings, true_embeddings)
 
             # Toxicity Classification Loss
-            batch_predicted_log_tox = batch_predicted_combined[:, 512:516]  # 4-class logits for toxicity
+            batch_predicted_log_tox = batch_predicted_combined[:, 512:516]
             loss2 = criterion2(batch_predicted_log_tox, true_tox_class)
 
             # Morgan Loss
@@ -3684,35 +3474,13 @@ def train_model_condenc_1234e1e2_class_mabal(model, train_data, val_data, epochs
             batch_predicted_filtered_morgan = batch_predicted_combined[:, 516 + 2048:]
             loss4 = criterion4(batch_predicted_filtered_morgan, true_filtered_morgan)
 
-            # ============ CAPTURE INITIAL LOSSES (First Batch) ============
-            if initial_losses is None:
-                initial_losses = {
-                    'loss1': loss1.item(),
-                    'loss2': loss2.item(),
-                    'loss3': loss3.item(),
-                    'loss4': loss4.item()
-                }
-                print(f"Initial losses for normalization (will be refined with EMA during epoch 1):")
-                print(f"  ChemNet: {initial_losses['loss1']:.6f}")
-                print(f"  Toxicity: {initial_losses['loss2']:.6f}")
-                print(f"  Morgan: {initial_losses['loss3']:.6f}")
-                print(f"  Filtered Morgan: {initial_losses['loss4']:.6f}")
+            # ============ NORMALIZE BY SCALE FACTORS ============
+            normalized_loss1 = loss1 / scale_factors['loss1']
+            normalized_loss2 = loss2 / scale_factors['loss2']
+            normalized_loss3 = loss3 / scale_factors['loss3']
+            normalized_loss4 = loss4 / scale_factors['loss4']
             
-            # ============ UPDATE WITH EXPONENTIAL MOVING AVERAGE DURING FIRST EPOCH ============
-            if epoch == 0:
-                # Use exponential moving average during first epoch
-                initial_losses['loss1'] = ema_alpha * loss1.item() + (1 - ema_alpha) * initial_losses['loss1']
-                initial_losses['loss2'] = ema_alpha * loss2.item() + (1 - ema_alpha) * initial_losses['loss2']
-                initial_losses['loss3'] = ema_alpha * loss3.item() + (1 - ema_alpha) * initial_losses['loss3']
-                initial_losses['loss4'] = ema_alpha * loss4.item() + (1 - ema_alpha) * initial_losses['loss4']
-            
-            # ============ NORMALIZE AND WEIGHT ============
-            # Normalize by initial values, then apply lambda weights
-            normalized_loss1 = loss1 / initial_losses['loss1']
-            normalized_loss2 = loss2 / initial_losses['loss2']
-            normalized_loss3 = loss3 / initial_losses['loss3']
-            normalized_loss4 = loss4 / initial_losses['loss4']
-            
+            # Apply lambda weighting to normalized losses
             weighted_loss1 = lambda1 * normalized_loss1
             weighted_loss2 = lambda2 * normalized_loss2
             weighted_loss3 = lambda3 * normalized_loss3
@@ -3723,6 +3491,12 @@ def train_model_condenc_1234e1e2_class_mabal(model, train_data, val_data, epochs
 
             # Backpropagation and optimization
             total_loss.backward()
+            # # After total_loss.backward()
+            # if epoch % 10 == 0:  # Log every 10 epochs
+            #     print(f"\nGradient norms at epoch {epoch+1}:")
+            #     for name, param in model.named_parameters():
+            #         if param.grad is not None:
+            #             print(f"  {name}: {param.grad.norm().item():.6f}")
             optimizer.step()
 
             # Accumulate losses for logging
@@ -3732,28 +3506,15 @@ def train_model_condenc_1234e1e2_class_mabal(model, train_data, val_data, epochs
             running_morgan_loss += weighted_loss3.item()
             running_filtered_morgan_loss += weighted_loss4.item()
 
-        # ============ LOG FINAL NORMALIZATION VALUES AFTER EPOCH 0 ============
-        if epoch == 0:
-            print(f"\nFinal normalization factors after EMA (epoch 1):")
-            print(f"  ChemNet: {initial_losses['loss1']:.6f}")
-            print(f"  Toxicity: {initial_losses['loss2']:.6f}")
-            print(f"  Morgan: {initial_losses['loss3']:.6f}")
-            print(f"  Filtered Morgan: {initial_losses['loss4']:.6f}\n")
-            
-            wandb.config.update({
-                "norm_loss1": initial_losses['loss1'],
-                "norm_loss2": initial_losses['loss2'],
-                "norm_loss3": initial_losses['loss3'],
-                "norm_loss4": initial_losses['loss4'],
-                "ema_alpha": ema_alpha
-            })
-
         # Calculate average losses per epoch
         average_train_loss = running_loss / len(train_data)
         average_train_embedding_loss = running_embedding_loss / len(train_data)
         average_train_toxicity_loss = running_toxicity_loss / len(train_data)
         average_train_morgan_loss = running_morgan_loss / len(train_data)
         average_train_filtered_morgan_loss = running_filtered_morgan_loss / len(train_data)
+        
+        # Store losses
+        train_losses.append(average_train_loss)
         
         # Log training losses
         wandb.log({
@@ -3772,6 +3533,7 @@ def train_model_condenc_1234e1e2_class_mabal(model, train_data, val_data, epochs
         val_toxicity_loss = 0.0
         val_morgan_loss = 0.0
         val_filtered_morgan_loss = 0.0
+        
         with torch.no_grad():
             for val_batch_with_ext, val_true_embeddings, val_true_tox_class, val_true_morgan, val_true_filtered_morgan, _ in val_data:
                 val_batch_with_ext = val_batch_with_ext.to(device)
@@ -3801,10 +3563,10 @@ def train_model_condenc_1234e1e2_class_mabal(model, train_data, val_data, epochs
                 val_loss4 = criterion4(val_batch_predicted_filtered_morgan, val_true_filtered_morgan)
 
                 # Normalize and weight validation losses
-                val_normalized_loss1 = val_loss1 / initial_losses['loss1']
-                val_normalized_loss2 = val_loss2 / initial_losses['loss2']
-                val_normalized_loss3 = val_loss3 / initial_losses['loss3']
-                val_normalized_loss4 = val_loss4 / initial_losses['loss4']
+                val_normalized_loss1 = val_loss1 / scale_factors['loss1']
+                val_normalized_loss2 = val_loss2 / scale_factors['loss2']
+                val_normalized_loss3 = val_loss3 / scale_factors['loss3']
+                val_normalized_loss4 = val_loss4 / scale_factors['loss4']
                 
                 val_weighted_loss1 = lambda1 * val_normalized_loss1
                 val_weighted_loss2 = lambda2 * val_normalized_loss2
@@ -3825,6 +3587,9 @@ def train_model_condenc_1234e1e2_class_mabal(model, train_data, val_data, epochs
         average_val_morgan_loss = val_morgan_loss / len(val_data)
         average_val_filtered_morgan_loss = val_filtered_morgan_loss / len(val_data)
         
+        # Store validation losses
+        val_losses.append(average_val_loss)
+        
         # Log validation losses
         wandb.log({
             "average_val_loss": average_val_loss,
@@ -3833,18 +3598,6 @@ def train_model_condenc_1234e1e2_class_mabal(model, train_data, val_data, epochs
             "average_val_morgan_loss": average_val_morgan_loss,
             "average_val_filtered_morgan_loss": average_val_filtered_morgan_loss,
         })
-
-        # Store losses for epoch
-        train_losses.append(average_train_loss)
-        val_losses.append(average_val_loss)
-        train_embedding_losses.append(average_train_embedding_loss)
-        train_toxicity_losses.append(average_train_toxicity_loss)
-        train_morgan_losses.append(average_train_morgan_loss)
-        train_filtered_morgan_losses.append(average_train_filtered_morgan_loss)
-        val_embedding_losses.append(average_val_embedding_loss)
-        val_toxicity_losses.append(average_val_toxicity_loss)
-        val_morgan_losses.append(average_val_morgan_loss)
-        val_filtered_morgan_losses.append(average_val_filtered_morgan_loss)
 
         if epoch % 10 == 0 or epoch == epochs - 1:
             print(f"Epoch [{epoch+1}/{epochs}]")
@@ -3860,6 +3613,420 @@ def train_model_condenc_1234e1e2_class_mabal(model, train_data, val_data, epochs
             print(f"   Val Filtered Morgan Loss: {average_val_filtered_morgan_loss:.6f}")
     
     wandb.finish()
-    return (model, train_losses, val_losses, train_embedding_losses, train_toxicity_losses, 
-            train_morgan_losses, train_filtered_morgan_losses, val_embedding_losses, 
-            val_toxicity_losses, val_morgan_losses, val_filtered_morgan_losses)
+    return (model, train_losses, val_losses)
+
+
+
+
+###==================== TESTS ======================== ###
+# Periodic recomputation normalization version full set of conditions (iap = initial and periodic)
+def train_model_condenc_1234e1e2_class_iap_test(model, train_data, val_data, epochs, learning_rate, 
+                                       criterion1, criterion2, criterion3, criterion4,
+                                       lambda1, lambda2, lambda3, lambda4, device, 
+                                       config, recompute_interval=50):
+    """
+    Train the conditional encoder model with periodic recomputation of normalization factors for each loss component.
+    recompute_interval : int
+        How often to recompute normalization factors (in epochs). Default: 50
+    """
+    # Define optimizer
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    
+    # Initialize wandb for logging
+    wandb.init(entity=config['wandb_entity'],
+               project=config['wandb_project'],
+               config=config)
+    
+    # Log recompute interval
+    wandb.config.update({"recompute_interval": recompute_interval})
+    
+    # Initialize lists to store losses
+    train_losses = []
+    val_losses = []
+    
+    # Initialize scale factors (will be computed in first epoch)
+    scale_factors = None
+
+    def compute_scale_factors(model, data_loader, num_batches=10):
+        """
+        Compute scale factors from a subset of the data.
+        
+        Parameters:
+        ----------
+        model : nn.Module
+            The model to evaluate
+        data_loader : DataLoader
+            The data to sample from
+        num_batches : int
+            Number of batches to use for estimation
+        
+        Returns:
+        -------
+        dict : Scale factors for each loss
+        """
+        model.eval()
+        temp_losses = {'loss1': [], 'loss2': [], 'loss3': [], 'loss4': []}
+        
+        with torch.no_grad():
+            for batch_idx, (batch_with_ext, true_embeddings, true_tox_class, true_morgan, true_filtered_morgan, _) in enumerate(data_loader):
+                if batch_idx >= num_batches:
+                    break
+                
+                batch_with_ext = batch_with_ext.to(device)
+                true_embeddings = true_embeddings.to(device)
+                true_tox_class = true_tox_class.to(device)
+                true_morgan = true_morgan.to(device)
+                true_filtered_morgan = true_filtered_morgan.to(device)
+                
+                batch_predicted_combined = model(batch_with_ext)
+                
+                # Embedding loss
+                batch_predicted_embeddings = batch_predicted_combined[:, :512]
+                loss1 = criterion1(batch_predicted_embeddings, true_embeddings)
+                
+                # Toxicity loss
+                batch_predicted_log_tox = batch_predicted_combined[:, 512:516]
+                loss2 = criterion2(batch_predicted_log_tox, true_tox_class)
+                
+                # Morgan loss
+                batch_predicted_morgan = batch_predicted_combined[:, 516:516 + 2048]
+                loss3 = criterion3(batch_predicted_morgan, true_morgan)
+                
+                # Filtered Morgan loss
+                batch_predicted_filtered_morgan = batch_predicted_combined[:, 516 + 2048:]
+                loss4 = criterion4(batch_predicted_filtered_morgan, true_filtered_morgan)
+                
+                temp_losses['loss1'].append(loss1.item())
+                temp_losses['loss2'].append(loss2.item())
+                temp_losses['loss3'].append(loss3.item())
+                temp_losses['loss4'].append(loss4.item())
+        
+        # Compute mean as scale factors
+        factors = {
+            'loss1': np.mean(temp_losses['loss1']),
+            'loss2': np.mean(temp_losses['loss2']),
+            'loss3': np.mean(temp_losses['loss3']),
+            'loss4': np.mean(temp_losses['loss4'])
+        }
+        
+        return factors
+
+    for epoch in range(epochs):
+        # ============ RECOMPUTE SCALE FACTORS PERIODICALLY ============
+        if epoch % recompute_interval == 0:
+            if epoch == 0:
+                print("Computing initial scale factors...")
+            else:
+                print(f"\n=== Recomputing scale factors at epoch {epoch+1} ===")
+            
+            scale_factors = compute_scale_factors(model, train_data, num_batches=10)
+            
+            print(f"Scale factors:")
+            print(f"  ChemNet Embedding (loss1): {scale_factors['loss1']:.6f}")
+            print(f"  Toxicity Classification (loss2): {scale_factors['loss2']:.6f}")
+            print(f"  Morgan Fingerprint (loss3): {scale_factors['loss3']:.6f}")
+            print(f"  Filtered Morgan (loss4): {scale_factors['loss4']:.6f}")
+            
+            # Calculate and display relative contributions
+            total_lambda = lambda1 + lambda2 + lambda3 + lambda4
+            print(f"\nWith lambda weights (λ1={lambda1}, λ2={lambda2}, λ3={lambda3}, λ4={lambda4}):")
+            print(f"  ChemNet contribution: {lambda1 / total_lambda * 100:.1f}%")
+            print(f"  Toxicity contribution: {lambda2 / total_lambda * 100:.1f}%")
+            print(f"  Morgan contribution: {lambda3 / total_lambda * 100:.1f}%")
+            print(f"  Filtered Morgan contribution: {lambda4 / total_lambda * 100:.1f}%\n")
+            
+            # Log to wandb
+            wandb.log({
+                "scale_factor_loss1_epoch": scale_factors['loss1'],
+                "scale_factor_loss2_epoch": scale_factors['loss2'],
+                "scale_factor_loss3_epoch": scale_factors['loss3'],
+                "scale_factor_loss4_epoch": scale_factors['loss4'],
+                "epoch": epoch + 1
+            })
+        
+        # ============ TRAINING PHASE ============
+        model.train()
+        running_loss = 0.0
+        running_embedding_loss = 0.0
+        running_toxicity_loss = 0.0
+        running_morgan_loss = 0.0
+        running_filtered_morgan_loss = 0.0
+        
+        for batch_idx, (batch_with_ext, true_embeddings, true_tox_class, true_morgan, true_filtered_morgan, _) in enumerate(train_data):
+            batch_with_ext = batch_with_ext.to(device)
+            true_embeddings = true_embeddings.to(device)
+            true_tox_class = true_tox_class.to(device)
+            true_morgan = true_morgan.to(device)
+            true_filtered_morgan = true_filtered_morgan.to(device)
+
+            optimizer.zero_grad()
+            batch_predicted_combined = model(batch_with_ext)
+
+            # Calculate individual losses
+            # Embedding Loss
+            batch_predicted_embeddings = batch_predicted_combined[:, :512]
+            loss1 = criterion1(batch_predicted_embeddings, true_embeddings)
+
+            # Toxicity Classification Loss
+            batch_predicted_log_tox = batch_predicted_combined[:, 512:516]
+            loss2 = criterion2(batch_predicted_log_tox, true_tox_class)
+
+            # Morgan Loss
+            batch_predicted_morgan = batch_predicted_combined[:, 516:516 + 2048]
+            loss3 = criterion3(batch_predicted_morgan, true_morgan)
+
+            # Filtered Morgan Loss
+            batch_predicted_filtered_morgan = batch_predicted_combined[:, 516 + 2048:]
+            loss4 = criterion4(batch_predicted_filtered_morgan, true_filtered_morgan)
+
+            # ============ NORMALIZE BY SCALE FACTORS ============
+            normalized_loss1 = loss1 / scale_factors['loss1']
+            normalized_loss2 = loss2 / scale_factors['loss2']
+            normalized_loss3 = loss3 / scale_factors['loss3']
+            normalized_loss4 = loss4 / scale_factors['loss4']
+            
+            # Apply lambda weighting to normalized losses
+            weighted_loss1 = lambda1 * normalized_loss1
+            weighted_loss2 = lambda2 * normalized_loss2
+            weighted_loss3 = lambda3 * normalized_loss3
+            weighted_loss4 = lambda4 * normalized_loss4
+
+            # Total Loss
+            total_loss = weighted_loss1 + weighted_loss2 + weighted_loss3 + weighted_loss4
+
+            # Backpropagation
+            # Check if we need to do gradient analysis this iteration
+            do_grad_analysis = (epoch % 10 == 0 and batch_idx == 0)
+            
+            # If doing gradient analysis, we need to retain the graph
+            if do_grad_analysis:
+                total_loss.backward(retain_graph=True)
+            else:
+                total_loss.backward()
+            
+            # ============ GRADIENT ANALYSIS ============
+            # Do this once per epoch on the first batch to avoid slowdown
+            if do_grad_analysis:
+                # Store the combined gradients from total_loss
+                combined_grads = {name: param.grad.clone() if param.grad is not None else None 
+                                  for name, param in model.named_parameters()}
+                
+                print(f"\n{'='*70}")
+                print(f"EPOCH {epoch+1} - GRADIENT ANALYSIS (First Batch)")
+                print(f"{'='*70}")
+                
+                # Compute gradient norms from each individual weighted loss
+                grad_norms = {}
+                
+                # Loss 1 gradients
+                model.zero_grad()
+                weighted_loss1.backward(retain_graph=True)
+                grad_norm_1 = sum(p.grad.norm().item()**2 for p in model.parameters() if p.grad is not None)**0.5
+                grad_norms['loss1'] = grad_norm_1
+                
+                # Loss 2 gradients
+                model.zero_grad()
+                weighted_loss2.backward(retain_graph=True)
+                grad_norm_2 = sum(p.grad.norm().item()**2 for p in model.parameters() if p.grad is not None)**0.5
+                grad_norms['loss2'] = grad_norm_2
+                
+                # Loss 3 gradients
+                model.zero_grad()
+                weighted_loss3.backward(retain_graph=True)
+                grad_norm_3 = sum(p.grad.norm().item()**2 for p in model.parameters() if p.grad is not None)**0.5
+                grad_norms['loss3'] = grad_norm_3
+                
+                # Loss 4 gradients
+                model.zero_grad()
+                weighted_loss4.backward(retain_graph=True)
+                grad_norm_4 = sum(p.grad.norm().item()**2 for p in model.parameters() if p.grad is not None)**0.5
+                grad_norms['loss4'] = grad_norm_4
+                
+                total_grad_norm = grad_norm_1 + grad_norm_2 + grad_norm_3 + grad_norm_4
+                
+                print(f"\nRAW LOSS VALUES:")
+                print(f"  loss1 (embedding):       {loss1.item():.8f}")
+                print(f"  loss2 (toxicity):        {loss2.item():.8f}")
+                print(f"  loss3 (morgan):          {loss3.item():.8f}")
+                print(f"  loss4 (filtered morgan): {loss4.item():.8f}")
+                
+                print(f"\nSCALE FACTORS:")
+                print(f"  scale1: {scale_factors['loss1']:.8f}")
+                print(f"  scale2: {scale_factors['loss2']:.8f}")
+                print(f"  scale3: {scale_factors['loss3']:.8f}")
+                print(f"  scale4: {scale_factors['loss4']:.8f}")
+                
+                print(f"\nNORMALIZED LOSSES:")
+                print(f"  normalized_loss1: {normalized_loss1.item():.8f}")
+                print(f"  normalized_loss2: {normalized_loss2.item():.8f}")
+                print(f"  normalized_loss3: {normalized_loss3.item():.8f}")
+                print(f"  normalized_loss4: {normalized_loss4.item():.8f}")
+                
+                print(f"\nWEIGHTED LOSSES (λ1={lambda1}, λ2={lambda2}, λ3={lambda3}, λ4={lambda4}):")
+                print(f"  weighted_loss1: {weighted_loss1.item():.8f}")
+                print(f"  weighted_loss2: {weighted_loss2.item():.8f}")
+                print(f"  weighted_loss3: {weighted_loss3.item():.8f}")
+                print(f"  weighted_loss4: {weighted_loss4.item():.8f}")
+                
+                print(f"\nGRADIENT NORMS (from weighted losses):")
+                print(f"  grad_norm_1: {grad_norm_1:.8f}")
+                print(f"  grad_norm_2: {grad_norm_2:.8f}  ← TOXICITY")
+                print(f"  grad_norm_3: {grad_norm_3:.8f}")
+                print(f"  grad_norm_4: {grad_norm_4:.8f}")
+                
+                print(f"\nGRADIENT RATIOS (relative to loss2):")
+                if grad_norm_1 > 0:
+                    print(f"  grad2/grad1: {grad_norm_2/grad_norm_1:.2f}x")
+                if grad_norm_3 > 0:
+                    print(f"  grad2/grad3: {grad_norm_2/grad_norm_3:.2f}x")
+                if grad_norm_4 > 0:
+                    print(f"  grad2/grad4: {grad_norm_2/grad_norm_4:.2f}x")
+                
+                print(f"\nGRADIENT CONTRIBUTIONS (percentages):")
+                print(f"  Loss1 contribution: {100 * grad_norm_1 / total_grad_norm:.2f}%")
+                print(f"  Loss2 contribution: {100 * grad_norm_2 / total_grad_norm:.2f}%  ← TOXICITY")
+                print(f"  Loss3 contribution: {100 * grad_norm_3 / total_grad_norm:.2f}%")
+                print(f"  Loss4 contribution: {100 * grad_norm_4 / total_grad_norm:.2f}%")
+                
+                print(f"{'='*70}\n")
+                
+                # Restore the original combined gradients
+                for name, param in model.named_parameters():
+                    if combined_grads[name] is not None:
+                        param.grad = combined_grads[name]
+                
+                # Log to wandb
+                wandb.log({
+                    "grad_norm_loss1": grad_norm_1,
+                    "grad_norm_loss2": grad_norm_2,
+                    "grad_norm_loss3": grad_norm_3,
+                    "grad_norm_loss4": grad_norm_4,
+                    "grad_contribution_loss1_pct": 100 * grad_norm_1 / total_grad_norm,
+                    "grad_contribution_loss2_pct": 100 * grad_norm_2 / total_grad_norm,
+                    "grad_contribution_loss3_pct": 100 * grad_norm_3 / total_grad_norm,
+                    "grad_contribution_loss4_pct": 100 * grad_norm_4 / total_grad_norm,
+                    "raw_loss1": loss1.item(),
+                    "raw_loss2": loss2.item(),
+                    "raw_loss3": loss3.item(),
+                    "raw_loss4": loss4.item(),
+                    "epoch": epoch + 1
+                })
+            
+            # Optimization step
+            optimizer.step()
+
+            # Accumulate losses for logging
+            running_loss += total_loss.item()
+            running_embedding_loss += weighted_loss1.item()
+            running_toxicity_loss += weighted_loss2.item()
+            running_morgan_loss += weighted_loss3.item()
+            running_filtered_morgan_loss += weighted_loss4.item()
+
+        # Calculate average losses per epoch
+        average_train_loss = running_loss / len(train_data)
+        average_train_embedding_loss = running_embedding_loss / len(train_data)
+        average_train_toxicity_loss = running_toxicity_loss / len(train_data)
+        average_train_morgan_loss = running_morgan_loss / len(train_data)
+        average_train_filtered_morgan_loss = running_filtered_morgan_loss / len(train_data)
+        
+        # Store losses
+        train_losses.append(average_train_loss)
+        
+        # Log training losses
+        wandb.log({
+            "epoch": epoch + 1,
+            "average_train_loss": average_train_loss,
+            "average_train_embedding_loss": average_train_embedding_loss,
+            "average_train_toxicity_loss": average_train_toxicity_loss,
+            "average_train_morgan_loss": average_train_morgan_loss,
+            "average_train_filtered_morgan_loss": average_train_filtered_morgan_loss,
+        })
+
+        # ============ VALIDATION PHASE ============
+        model.eval()
+        val_loss = 0.0
+        val_embedding_loss = 0.0
+        val_toxicity_loss = 0.0
+        val_morgan_loss = 0.0
+        val_filtered_morgan_loss = 0.0
+        
+        with torch.no_grad():
+            for val_batch_with_ext, val_true_embeddings, val_true_tox_class, val_true_morgan, val_true_filtered_morgan, _ in val_data:
+                val_batch_with_ext = val_batch_with_ext.to(device)
+                val_true_embeddings = val_true_embeddings.to(device)
+                val_true_tox_class = val_true_tox_class.to(device)
+                val_true_morgan = val_true_morgan.to(device)
+                val_true_filtered_morgan = val_true_filtered_morgan.to(device)
+
+                val_batch_predicted = model(val_batch_with_ext)
+
+                # Calculate individual losses
+                val_batch_predicted_embeddings = val_batch_predicted[:, :512]
+                val_batch_predicted_log_tox = val_batch_predicted[:, 512:516]
+                val_batch_predicted_morgan = val_batch_predicted[:, 516:516 + 2048]
+                val_batch_predicted_filtered_morgan = val_batch_predicted[:, 516 + 2048:]
+
+                # Embedding Loss
+                val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
+
+                # Toxicity Classification Loss
+                val_loss2 = criterion2(val_batch_predicted_log_tox, val_true_tox_class)
+
+                # Morgan Loss
+                val_loss3 = criterion3(val_batch_predicted_morgan, val_true_morgan)
+
+                # Filtered Morgan Loss
+                val_loss4 = criterion4(val_batch_predicted_filtered_morgan, val_true_filtered_morgan)
+
+                # Normalize and weight validation losses
+                val_normalized_loss1 = val_loss1 / scale_factors['loss1']
+                val_normalized_loss2 = val_loss2 / scale_factors['loss2']
+                val_normalized_loss3 = val_loss3 / scale_factors['loss3']
+                val_normalized_loss4 = val_loss4 / scale_factors['loss4']
+                
+                val_weighted_loss1 = lambda1 * val_normalized_loss1
+                val_weighted_loss2 = lambda2 * val_normalized_loss2
+                val_weighted_loss3 = lambda3 * val_normalized_loss3
+                val_weighted_loss4 = lambda4 * val_normalized_loss4
+
+                # Accumulate validation losses
+                val_loss += val_weighted_loss1.item() + val_weighted_loss2.item() + val_weighted_loss3.item() + val_weighted_loss4.item()
+                val_embedding_loss += val_weighted_loss1.item()
+                val_toxicity_loss += val_weighted_loss2.item()
+                val_morgan_loss += val_weighted_loss3.item()
+                val_filtered_morgan_loss += val_weighted_loss4.item()
+
+        # Calculate average validation losses per epoch
+        average_val_loss = val_loss / len(val_data)
+        average_val_embedding_loss = val_embedding_loss / len(val_data)
+        average_val_toxicity_loss = val_toxicity_loss / len(val_data)
+        average_val_morgan_loss = val_morgan_loss / len(val_data)
+        average_val_filtered_morgan_loss = val_filtered_morgan_loss / len(val_data)
+        
+        # Store validation losses
+        val_losses.append(average_val_loss)
+        
+        # Log validation losses
+        wandb.log({
+            "average_val_loss": average_val_loss,
+            "average_val_embedding_loss": average_val_embedding_loss,
+            "average_val_toxicity_loss": average_val_toxicity_loss,
+            "average_val_morgan_loss": average_val_morgan_loss,
+            "average_val_filtered_morgan_loss": average_val_filtered_morgan_loss,
+        })
+
+        if epoch % 10 == 0 or epoch == epochs - 1:
+            print(f"Epoch [{epoch+1}/{epochs}]")
+            print(f"   Training loss: {average_train_loss:.6f}")
+            print(f"   ChemNet Loss: {average_train_embedding_loss:.6f}")
+            print(f"   Toxicity Loss: {average_train_toxicity_loss:.6f}") 
+            print(f"   Morgan Loss: {average_train_morgan_loss:.6f}")
+            print(f"   Filtered Morgan Loss: {average_train_filtered_morgan_loss:.6f}")
+            print(f"   Validation loss: {average_val_loss:.6f}")
+            print(f"   Val ChemNet Loss: {average_val_embedding_loss:.6f}")
+            print(f"   Val Toxicity Loss: {average_val_toxicity_loss:.6f}") 
+            print(f"   Val Morgan Loss: {average_val_morgan_loss:.6f}")
+            print(f"   Val Filtered Morgan Loss: {average_val_filtered_morgan_loss:.6f}")
+    
+    wandb.finish()
+    return (model, train_losses, val_losses)

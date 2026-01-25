@@ -227,7 +227,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         actual_input_size = x_train_with_ext.shape[1]
         print(f"Creating model with input size: {actual_input_size}")
 
-        cond_encoder_current = fd.Cond_Encoder_1234_class(input_size=actual_input_size,
+        cond_encoder_current = fd.Cond_Encoder_1234_class_dropout(input_size=actual_input_size,
                                                              output_size=output_size, 
                                                              num_layers=num_layers).to(device)
         
@@ -263,7 +263,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
 
         # ==================== TRAIN MODEL ==================== #
         print("Training model...")
-        trained_cond_encoder = fd.train_model_condenc_1234e1e2_class_bal(
+        trained_cond_encoder = fd.train_model_condenc_1234e1e2_class_iap(
             model=cond_encoder_current,
             train_data=train_loader,
             val_data=val_loader,

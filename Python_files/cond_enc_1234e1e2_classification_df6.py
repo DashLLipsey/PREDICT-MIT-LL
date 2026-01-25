@@ -81,10 +81,10 @@ num_layers = 5
 batch_size = 256
 epochs = 100
 lr = 0.0001
-lambda1 = 1 # For ChemNet embeddings
-lambda2 = 1 # For toxicity
-lambda3 = 1 # For regular Morgan fingerprints
-lambda4 = 1 # For filtered Morgan fingerprints
+lambda1 = 10 # For ChemNet embeddings
+lambda2 = 0.1 # For toxicity
+lambda3 = 10 # For regular Morgan fingerprints
+lambda4 = 10 # For filtered Morgan fingerprints
 
 # Loss functions
 criterion1 = nn.MSELoss()  # ChemNet embeddings
@@ -240,10 +240,9 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         actual_input_size = x_train_with_ext.shape[1]
         print(f"Creating model with input size: {actual_input_size}")
 
-        cond_encoder_current = fd.Cond_Encoder_1234_class(input_size=actual_input_size,
+        cond_encoder_current = fd.Cond_Encoder_1234_class_dropout(input_size=actual_input_size,
                                                              output_size=output_size, 
-                                                             num_layers=num_layers).to(device)
-        
+                                                             num_layers=num_layers, dropout_rate=0.3).to(device)
         # Create DataLoaders for training
         train_dataset = TensorDataset(x_train_with_ext, y_train_emb, y_train_tox_class, y_train_morgan, y_train_filtered_morgan, train_indices_tensor)
         val_dataset = TensorDataset(x_val_with_ext, y_val_emb, y_val_tox_class, y_val_morgan, y_val_filtered_morgan, val_indices_tensor)
@@ -276,7 +275,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
 
         # ==================== TRAIN MODEL ==================== #
         print("Training model...")
-        trained_cond_encoder = fd.train_model_condenc_1234e1e2_class_mabal(
+        trained_cond_encoder = fd.train_model_condenc_1234e1e2_class_iap(
             model=cond_encoder_current,
             train_data=train_loader,
             val_data=val_loader,
@@ -291,7 +290,8 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             lambda3=lambda3,
             lambda4=lambda4,
             device=device,
-            config=chemnet_tox_morgan_config
+            config=chemnet_tox_morgan_config,
+            recompute_interval=50
         )
         
         # ==================== EVALUATE ON FULL VALIDATION SET ==================== #
