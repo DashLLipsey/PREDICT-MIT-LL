@@ -81,10 +81,10 @@ num_layers = 5
 batch_size = 256
 epochs = 100
 lr = 0.0001
-lambda1 = 10 # For ChemNet embeddings
-lambda2 = 0.1 # For toxicity
-lambda3 = 10 # For regular Morgan fingerprints
-lambda4 = 10 # For filtered Morgan fingerprints
+lambda1 = 1 # For ChemNet embeddings
+lambda2 = 1 # For toxicity
+lambda3 = 1 # For regular Morgan fingerprints
+lambda4 = 1 # For filtered Morgan fingerprints
 
 # Loss functions
 criterion1 = nn.MSELoss()  # ChemNet embeddings
