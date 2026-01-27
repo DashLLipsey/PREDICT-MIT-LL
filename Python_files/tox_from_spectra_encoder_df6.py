@@ -106,6 +106,13 @@ dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parqu
 allowed_bin_prefixes = ['bin1_'] 
 allowed_threshold_suffixes = ['thresh0_05']
 
+# Full set of bin and threshold values
+# allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
+#                         'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_'] # 'bin0_05' 
+# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
+#                              'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
+#                              'thresh50', 'thresh100']
+
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
 dataset_files = [f for f in dataset_files if any(suffix in f for suffix in allowed_threshold_suffixes)]
@@ -190,30 +197,34 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         test_data_processed = fd.add_response_and_log_response(test_data.copy(), df6_subset, smiles_col='SMILES_spectra')
         test_data_processed = fd.add_epa_levels(test_data_processed)
 
-        # ##########################################
-        # ### NEW FUNCTION CALL - UPDATE NAME IF NEEDED ###
+        # Inspect columns that will be used for tensor creation
+        tensor_columns = train_data_processed.columns[1:-10]
+        print(f"\nColumns to be used in tensor (start_idx=1, stop_idx=-10):")
+        print(f"Total: {len(tensor_columns)} columns")
+        print(f"First 10: {list(tensor_columns[:10])}")
+        print(f"Last 10: {list(tensor_columns[-10:])}")
+        
         # Create tensors for training
-        print("Creating training tensors for direct toxicity prediction...")
+        print("\nCreating training tensors for direct toxicity prediction...")
         x_train, y_train_tox, train_indices_tensor = fd.create_dataset_tensors_direct_toxicity_e1e2(
             train_data_processed, device, start_idx=1, stop_idx=-10)
+        
+        print(f"Tensor shape created: {x_train.shape}")
 
         x_val, y_val_tox, val_indices_tensor = fd.create_dataset_tensors_direct_toxicity_e1e2(
             test_data_processed, device, start_idx=1, stop_idx=-10)
-        # ##########################################
 
         # Create model
         actual_input_size = x_train.shape[1]
         print(f"Creating direct toxicity model with input size: {actual_input_size}")
 
-        # ##########################################
-        # ### NEW MODEL CLASS - UPDATE NAME IF NEEDED ###
+        # Direct toxicity encoder that uses external conditions
         direct_tox_model = fd.Direct_Toxicity_Encoder(
             input_size=actual_input_size,
             num_classes=num_classes,
             num_layers=num_layers,
             dropout_rate=0.3
         ).to(device)
-        # ##########################################
         
         # Create DataLoaders for training
         train_dataset = TensorDataset(x_train, y_train_tox, train_indices_tensor)
@@ -243,8 +254,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
 
         # ==================== TRAIN MODEL ==================== #
         print("Training direct toxicity model...")
-        # ##########################################
-        # ### NEW TRAINING FUNCTION - UPDATE NAME IF NEEDED ###
+        # Direct prediction training function
         trained_direct_tox_model, train_losses, val_losses, train_accs, val_accs = fd.train_direct_toxicity_encoder_e1e2(
             model=direct_tox_model,
             train_data=train_loader,
@@ -255,8 +265,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             device=device,
             config=direct_tox_config
         )
-        # ##########################################
-        
+
         # ==================== EVALUATE ON FULL VALIDATION SET ==================== #
         print(f"\n{'='*80}")
         print("Evaluating on Full Validation Set")
@@ -283,13 +292,10 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         
         # Create a copy for tensor creation
         filtered_dataset_for_tensors = filtered_dataset_full_processed.drop(columns=['original_index', 'train']).copy()
-        
-        # ##########################################
-        # ### NEW FUNCTION CALL - UPDATE NAME IF NEEDED ###
+
         # Create tensors for full validation set
         x_full_val, y_full_val_tox, full_val_indices_tensor = fd.create_dataset_tensors_direct_toxicity_e1e2(
             filtered_dataset_for_tensors, device, start_idx=1, stop_idx=-10)
-        # ##########################################
         
         # Generate predictions on full validation set
         direct_tox_model.eval()
@@ -334,10 +340,8 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             thresh_part = parts[1].split('_df_spectra')[0]
             threshold_part = f"thresh{thresh_part}"
         
-        # ##########################################
-        # ### NEW OUTPUT FOLDER PATH ###
+        # Direct encoder predictions output folder
         full_val_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_df6"
-        # ##########################################
         os.makedirs(full_val_output_folder, exist_ok=True)
 
         full_val_predictions_filename = f"direct_tox_{bin_part}_{threshold_part}_df_spectra.parquet"
@@ -371,13 +375,10 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             super_test_df['index'] = range(len(super_test_df))
             super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
             super_test_processed = fd.add_epa_levels(super_test_processed)
-            
-            # ##########################################
-            # ### NEW FUNCTION CALL - UPDATE NAME IF NEEDED ###
+
             # Create tensors for super test set
             x_super_test, y_super_test_tox, super_test_indices_tensor = fd.create_dataset_tensors_direct_toxicity_e1e2(
                 super_test_processed, device, start_idx=1, stop_idx=-10)
-            # ##########################################
             
             # Generate predictions on super test set
             with torch.no_grad():
@@ -406,13 +407,11 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             print(f"Super test set accuracy: {accuracy_super:.2f}% ({correct_super}/{total_super})")
             
             # Save super test set predictions
-            # ##########################################
-            # ### NEW OUTPUT FOLDER PATH ###
+            # Direct encoder predictions output folder
             super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_df6_super_test"
-            # ##########################################
             os.makedirs(super_test_output_folder, exist_ok=True)
 
-            super_test_predictions_filename = f"super_test_direct_tox_{bin_part}_{threshold_part}_df_spectra.parquet"
+            super_test_predictions_filename = f"super_test_t    _{bin_part}_{threshold_part}_df_spectra.parquet"
             super_test_predictions_path = os.path.join(super_test_output_folder, super_test_predictions_filename)
             
             try:

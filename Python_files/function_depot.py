@@ -2728,6 +2728,90 @@ def train_model_condenc_1234e1e2_class_iap(model, train_data, val_data, epochs, 
     return (model, train_losses, val_losses)
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ### ===================================== NEW APPROACH - EMBEDDINGS ===================================== ###
 # And here we switch gears once again. We have a 2 step process where we first use a conditinoal encoder to
 # train, using spectra and external conditions to predict thre 3 embeddings with the same weighted loss
@@ -2802,6 +2886,31 @@ class Cond_Encoder_134(nn.Module):
             layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
             if i < num_layers - 1:
                 layers.append(nn.LeakyReLU(inplace=True))
+        self.encoder = nn.Sequential(*layers)
+
+    def forward(self, x):
+        output = self.encoder(x)
+        
+        # Split the output into three parts
+        embedding_output = output[:, :512]    # ChemNet embeddings (no activation)
+        morgan_output = output[:, 512:512+2048]  # Morgan fingerprints (2048 columns)
+        filtered_morgan_output = output[:, 512+2048:]  # Filtered Morgan fingerprints (remaining columns)
+    
+        # Concatenate back together
+        final_output = torch.cat([embedding_output, morgan_output, filtered_morgan_output], dim=1)
+        
+        return final_output
+
+class Cond_Encoder_134_dropout(nn.Module):
+    def __init__(self, input_size, output_size, num_layers, dropout_rate=0.2):
+        super().__init__()
+        layers = []
+        layer_sizes = np.linspace(input_size, output_size, num_layers + 1, dtype=int)
+        for i in range(num_layers):
+            layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i < num_layers - 1:
+                layers.append(nn.LeakyReLU(inplace=True))
+                layers.append(nn.Dropout(dropout_rate))  # Add dropout after activation
         self.encoder = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -2964,10 +3073,20 @@ def train_model_condenc_134e1e2(model, train_data, val_data, epochs, learning_ra
     wandb.finish()
     return (model, train_losses, val_losses)
 
+
+
+
+
+
+
+
+
+
+
 ### =============================== TOXICITY PREDICTION FROM EMBEDDINGS =============================== ###
 # Here is the model deisgned to take emdebbings and predict toxicity from them
 class ToxicityClassifier_134(nn.Module):
-    def __init__(self, num_layers, num_classes=4, dropout_rate=0.3):
+    def __init__(self, num_layers, num_classes=4, dropout_rate=0.2):
         """
         Toxicity classifier that takes concatenated embeddings as input.
         
@@ -3015,22 +3134,19 @@ class ToxicityClassifier_134(nn.Module):
         logits = self.classifier(x)
         return logits
 
-
-def create_dataset_tensors_toxicity_classifier_134(predicted_embeddings, predicted_morgan, predicted_filtered_morgan, 
-                                                spectra_dataset, device):
+def create_dataset_tensors_toxicity_classifier_134(embeddings_df, device):
     """
-    Create tensors for toxicity classification from predicted embeddings.
+    Create tensors for toxicity classification from saved intermediate embeddings DataFrame.
 
     Parameters:
     ----------
-    predicted_embeddings : torch.Tensor or np.ndarray
-        Predicted ChemNet embeddings [n_samples, 512]
-    predicted_morgan : torch.Tensor or np.ndarray
-        Predicted Morgan fingerprints [n_samples, 2048]
-    predicted_filtered_morgan : torch.Tensor or np.ndarray
-        Predicted filtered Morgan fingerprints [n_samples, 2048]
-    spectra_dataset : pd.DataFrame
-        DataFrame containing toxicity labels with EPA_level column or EPA_level_1-4 columns
+    embeddings_df : pd.DataFrame
+        DataFrame containing:
+        - cond_emb_0 to cond_emb_511: Predicted ChemNet embeddings
+        - cond_morgan_0 to cond_morgan_N: Predicted Morgan fingerprints
+        - cond_filtered_morgan_0 to cond_filtered_morgan_M: Predicted filtered Morgan fingerprints
+        - EPA_level column or EPA_level_1-4 columns for toxicity labels
+        - Metadata columns: SMILES_spectra, index_id, Response, log_response, train
     device : torch.device
         The device (CPU or GPU) on which to store the tensors.
 
@@ -3042,26 +3158,28 @@ def create_dataset_tensors_toxicity_classifier_134(predicted_embeddings, predict
         - tox_class_indices (torch.Tensor): Tensor of 4-class toxicity labels (integer class values: 0–3).
     """
     
-    # Convert to tensors if they're numpy arrays
-    if isinstance(predicted_embeddings, np.ndarray):
-        predicted_embeddings = torch.Tensor(predicted_embeddings)
-    if isinstance(predicted_morgan, np.ndarray):
-        predicted_morgan = torch.Tensor(predicted_morgan)
-    if isinstance(predicted_filtered_morgan, np.ndarray):
-        predicted_filtered_morgan = torch.Tensor(predicted_filtered_morgan)
+    # Extract embedding columns
+    emb_cols = [col for col in embeddings_df.columns if col.startswith('cond_emb_')]
+    morgan_cols = [col for col in embeddings_df.columns if col.startswith('cond_morgan_') and not col.startswith('cond_morgan_filtered')]
+    filtered_morgan_cols = [col for col in embeddings_df.columns if col.startswith('cond_filtered_morgan_')]
+    
+    # Extract embeddings as tensors
+    predicted_embeddings = torch.Tensor(embeddings_df[emb_cols].values)
+    predicted_morgan = torch.Tensor(embeddings_df[morgan_cols].values)
+    predicted_filtered_morgan = torch.Tensor(embeddings_df[filtered_morgan_cols].values)
     
     # Concatenate all predicted embeddings
     concatenated_embeddings = torch.cat([predicted_embeddings, predicted_morgan, predicted_filtered_morgan], dim=1)
     concatenated_embeddings_tensor = concatenated_embeddings.to(device)
     
     # Toxicity label processing: determine if we use one-hot columns or a single-class column
-    if {'EPA_level_1', 'EPA_level_2', 'EPA_level_3', 'EPA_level_4'}.issubset(spectra_dataset.columns):
+    if {'EPA_level_1', 'EPA_level_2', 'EPA_level_3', 'EPA_level_4'}.issubset(embeddings_df.columns):
         # Case 1: EPA levels are one-hot encoded across multiple columns
-        toxicity_classes = spectra_dataset[['EPA_level_1', 'EPA_level_2', 'EPA_level_3', 'EPA_level_4']]
+        toxicity_classes = embeddings_df[['EPA_level_1', 'EPA_level_2', 'EPA_level_3', 'EPA_level_4']]
         tox_class_indices = torch.argmax(torch.Tensor(toxicity_classes.values), dim=1).long().to(device)
-    elif 'EPA_level' in spectra_dataset.columns:
+    elif 'EPA_level' in embeddings_df.columns:
         # Case 2: EPA levels are stored in a single column with values 1, 2, 3, 4
-        tox_class_indices = torch.Tensor(spectra_dataset['EPA_level'].values - 1).long().to(device)  # Convert to 0-based index
+        tox_class_indices = torch.Tensor(embeddings_df['EPA_level'].values - 1).long().to(device)  # Convert to 0-based index
     else:
         raise ValueError("The input DataFrame must contain either one-hot columns 'EPA_level_1' to 'EPA_level_4' or a single 'EPA_level' column.")
 
