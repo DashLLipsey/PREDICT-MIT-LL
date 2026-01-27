@@ -103,15 +103,15 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
 # Filter for allowed bin sizes and thresholds
-allowed_bin_prefixes = ['bin1_'] 
-allowed_threshold_suffixes = ['thresh0_05']
+# allowed_bin_prefixes = ['bin1_'] 
+# allowed_threshold_suffixes = ['thresh0_05']
 
 # Full set of bin and threshold values
-# allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
-#                         'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_'] # 'bin0_05' 
-# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
-#                              'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
-#                              'thresh50', 'thresh100']
+allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
+                        'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_'] # 'bin0_05' 
+allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
+                             'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
+                             'thresh50', 'thresh100']
 
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
@@ -197,12 +197,12 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         test_data_processed = fd.add_response_and_log_response(test_data.copy(), df6_subset, smiles_col='SMILES_spectra')
         test_data_processed = fd.add_epa_levels(test_data_processed)
 
-        # Inspect columns that will be used for tensor creation
-        tensor_columns = train_data_processed.columns[1:-10]
-        print(f"\nColumns to be used in tensor (start_idx=1, stop_idx=-10):")
-        print(f"Total: {len(tensor_columns)} columns")
-        print(f"First 10: {list(tensor_columns[:10])}")
-        print(f"Last 10: {list(tensor_columns[-10:])}")
+        # # Inspect columns that will be used for tensor creation
+        # tensor_columns = train_data_processed.columns[1:-10]
+        # print(f"\nColumns to be used in tensor (start_idx=1, stop_idx=-10):")
+        # print(f"Total: {len(tensor_columns)} columns")
+        # print(f"First 10: {list(tensor_columns[:10])}")
+        # print(f"Last 10: {list(tensor_columns[-10:])}")
         
         # Create tensors for training
         print("\nCreating training tensors for direct toxicity prediction...")
@@ -223,7 +223,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             input_size=actual_input_size,
             num_classes=num_classes,
             num_layers=num_layers,
-            dropout_rate=0.3
+            dropout_rate=0.2
         ).to(device)
         
         # Create DataLoaders for training
@@ -411,7 +411,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_df6_super_test"
             os.makedirs(super_test_output_folder, exist_ok=True)
 
-            super_test_predictions_filename = f"super_test_t    _{bin_part}_{threshold_part}_df_spectra.parquet"
+            super_test_predictions_filename = f"super_test_direct_tox_{bin_part}_{threshold_part}_df_spectra.parquet"
             super_test_predictions_path = os.path.join(super_test_output_folder, super_test_predictions_filename)
             
             try:
