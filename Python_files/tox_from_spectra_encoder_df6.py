@@ -78,7 +78,7 @@ direct_toxicity_results = []
 # Model parameters
 num_classes = 4
 num_layers = 8
-batch_size = 512
+batch_size = 256
 epochs = 250
 lr = 0.0001
 
