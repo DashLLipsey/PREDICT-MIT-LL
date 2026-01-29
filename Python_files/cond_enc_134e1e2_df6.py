@@ -139,7 +139,7 @@ dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parqu
 #                              'thresh50', 'thresh100']
 
 # # Full set of bin and threshold values
-allowed_bin_prefixes = [ 'bin5_', 'bin50_', 'bin500_'] # 'bin0_05' 
+allowed_bin_prefixes = [ 'bin0_05']  
 allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
                              'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
                              'thresh50', 'thresh100']
