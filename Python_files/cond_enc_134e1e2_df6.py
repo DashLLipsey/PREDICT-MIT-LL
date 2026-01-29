@@ -127,13 +127,19 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 # Get all dataset files from the grid search folder
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
-# Filter for allowed bin sizes and thresholds
+# # Filter for allowed bin sizes and thresholds
 # allowed_bin_prefixes = ['bin1_'] 
 # allowed_threshold_suffixes = ['thresh0_05']
 
-# Full set of bin and threshold values
-allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
-                        'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_'] # 'bin0_05' 
+# # Full set of bin and threshold values
+# allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
+#                         'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_'] # 'bin0_05' 
+# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
+#                              'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
+#                              'thresh50', 'thresh100']
+
+# # Full set of bin and threshold values
+allowed_bin_prefixes = [ 'bin5_', 'bin50_', 'bin500_'] # 'bin0_05' 
 allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
                              'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
                              'thresh50', 'thresh100']

@@ -102,7 +102,7 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 # Get all dataset files from the grid search folder
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
-# # Filter for allowed bin sizes and thresholds
+# Filter for allowed bin sizes and thresholds
 # allowed_bin_prefixes = ['bin1_'] 
 # allowed_threshold_suffixes = ['thresh0_05']
 

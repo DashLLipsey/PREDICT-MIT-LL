@@ -77,7 +77,7 @@ cond_encoder_results = []
 
 # Model parameters
 output_size = None  # Will be set dynamically based on data
-num_layers = 5
+num_layers = 4
 batch_size = 256
 epochs = 100
 lr = 0.0001
