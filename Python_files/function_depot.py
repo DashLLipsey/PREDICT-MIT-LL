@@ -2278,7 +2278,7 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory,
 
 
 ### ====================================== CLASSIFICATION PROBLEM ====================================== ###
-# Now we switch gears to a classification problem with the 4 EPA toxicity levels. And here I will store
+# Now we switch gears to a classification problem with the 4 tox toxicity levels. And here I will store
 # all of the relevant functions for that task together.
 
 def create_dataset_tensors_condenc_1234e1e2_class(spectra_dataset, embedding_df, morgan_df, filtered_morgan_df, device, start_idx=None, stop_idx=None):
@@ -2289,7 +2289,7 @@ def create_dataset_tensors_condenc_1234e1e2_class(spectra_dataset, embedding_df,
     Parameters:
     ----------
     spectra_dataset : pd.DataFrame
-        DataFrame containing spectral data and chemical labels with Group, CE_clean, and EPA_level(s) columns.
+        DataFrame containing spectral data and chemical labels with Group, CE_clean, and tox_level(s) columns.
     embedding_df : pd.DataFrame
         DataFrame containing ChemNet embeddings for chemicals.
     morgan_df : pd.DataFrame
@@ -2338,40 +2338,42 @@ def create_dataset_tensors_condenc_1234e1e2_class(spectra_dataset, embedding_df,
     spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
 
     # Toxicity label processing: determine if we use one-hot columns or a single-class column
-    if {'EPA_level_1', 'EPA_level_2', 'EPA_level_3', 'EPA_level_4'}.issubset(spectra_dataset.columns):
-        # Case 1: EPA levels are one-hot encoded across multiple columns
-        toxicity_classes = spectra_dataset[['EPA_level_1', 'EPA_level_2', 'EPA_level_3', 'EPA_level_4']]
+    if {'tox_level_1', 'tox_level_2', 'tox_level_3', 'tox_level_4'}.issubset(spectra_dataset.columns):
+        # Case 1: tox levels are one-hot encoded across multiple columns
+        toxicity_classes = spectra_dataset[['tox_level_1', 'tox_level_2', 'tox_level_3', 'tox_level_4']]
         tox_class_indices = torch.argmax(torch.Tensor(toxicity_classes.values), dim=1).long().to(device)
-    elif 'EPA_level' in spectra_dataset.columns:
-        # Case 2: EPA levels are stored in a single column with values 1, 2, 3, 4
-        tox_class_indices = torch.Tensor(spectra_dataset['EPA_level'].values - 1).long().to(device)  # Convert to 0-based index
+    elif 'tox_level' in spectra_dataset.columns:
+        # Case 2: tox levels are stored in a single column with values 1, 2, 3, 4
+        tox_class_indices = torch.Tensor(spectra_dataset['tox_level'].values - 1).long().to(device)  # Convert to 0-based index
     else:
-        raise ValueError("The input DataFrame must contain either one-hot columns 'EPA_level1' to 'EPA_level4' or a single 'EPA_level' column.")
+        raise ValueError("The input DataFrame must contain either one-hot columns 'tox_level1' to 'tox_level4' or a single 'tox_level' column.")
 
     return spectra_with_ext_tensor, embeddings_tensor, tox_class_indices, morgan_tensor, filtered_morgan_tensor, spectra_indices_tensor
 
-# Define a function to assign EPA levels
-def assign_epa_level(response):
-    if response <= 50:
-        return "EPA_level_1"
+# Define a function to assign tox levels
+def assign_tox_level(response):
+    if response <= 5:
+        return "tox_level_0"
+    elif response <= 50:
+        return "tox_level_1"
     elif response <= 500:
-        return "EPA_level_2"
+        return "tox_level_2"
     elif response <= 5000:
-        return "EPA_level_3"
+        return "tox_level_3"
     else:
-        return "EPA_level_4"
+        return "tox_level_4"
 
-# Add EPA levels (one-hot encoded)
-def add_epa_levels(df, response_col='Response', assign_func=assign_epa_level):
+# Add tox levels (one-hot encoded)
+def add_tox_levels(df, response_col='Response', assign_func=assign_tox_level):
     """
-    Adds EPA level columns (one-hot) to the DataFrame based on the response column.
+    Adds tox level columns (one-hot) to the DataFrame based on the response column.
     Removes the original response column.
     """
     df = df.copy()
-    df["EPA_level"] = df[response_col].apply(assign_func)
-    df = pd.get_dummies(df, columns=["EPA_level"], prefix='', prefix_sep='')
-    epa_cols = [col for col in df.columns if str(col).startswith("EPA_level_")]
-    df[epa_cols] = df[epa_cols].astype(int)
+    df["tox_level"] = df[response_col].apply(assign_func)
+    df = pd.get_dummies(df, columns=["tox_level"], prefix='', prefix_sep='')
+    tox_cols = [col for col in df.columns if str(col).startswith("tox_level_")]
+    df[tox_cols] = df[tox_cols].astype(int)
     #df.drop(columns=[response_col], inplace=True)
     return df
 
@@ -3086,7 +3088,7 @@ def train_model_condenc_134e1e2(model, train_data, val_data, epochs, learning_ra
 ### =============================== TOXICITY PREDICTION FROM EMBEDDINGS =============================== ###
 # Here is the model deisgned to take emdebbings and predict toxicity from them
 class ToxicityClassifier_134(nn.Module):
-    def __init__(self, num_layers, num_classes=4, dropout_rate=0.2):
+    def __init__(self, num_layers, num_classes=5, dropout_rate=0.2):
         """
         Toxicity classifier that takes concatenated embeddings as input.
         
@@ -3095,7 +3097,7 @@ class ToxicityClassifier_134(nn.Module):
         num_layers : int
             Number of hidden layers in the classifier
         num_classes : int
-            Number of toxicity classes (default: 4 for EPA levels 1-4)
+            Number of toxicity classes (default: 4 for tox levels 1-4)
         dropout_rate : float
             Dropout rate for regularization (default: 0.3)
         """
@@ -3145,7 +3147,7 @@ def create_dataset_tensors_toxicity_classifier_134(embeddings_df, device):
         - cond_emb_0 to cond_emb_511: Predicted ChemNet embeddings
         - cond_morgan_0 to cond_morgan_N: Predicted Morgan fingerprints
         - cond_filtered_morgan_0 to cond_filtered_morgan_M: Predicted filtered Morgan fingerprints
-        - EPA_level column or EPA_level_1-4 columns for toxicity labels
+        - tox_level column or tox_level_0-4 columns for toxicity labels
         - Metadata columns: SMILES_spectra, index_id, Response, log_response, train
     device : torch.device
         The device (CPU or GPU) on which to store the tensors.
@@ -3173,15 +3175,15 @@ def create_dataset_tensors_toxicity_classifier_134(embeddings_df, device):
     concatenated_embeddings_tensor = concatenated_embeddings.to(device)
     
     # Toxicity label processing: determine if we use one-hot columns or a single-class column
-    if {'EPA_level_1', 'EPA_level_2', 'EPA_level_3', 'EPA_level_4'}.issubset(embeddings_df.columns):
-        # Case 1: EPA levels are one-hot encoded across multiple columns
-        toxicity_classes = embeddings_df[['EPA_level_1', 'EPA_level_2', 'EPA_level_3', 'EPA_level_4']]
+    if {'tox_level_0', 'tox_level_1', 'tox_level_2', 'tox_level_3', 'tox_level_4'}.issubset(embeddings_df.columns):
+        # Case 1: tox levels are one-hot encoded across multiple columns
+        toxicity_classes = embeddings_df[['tox_level_0', 'tox_level_1', 'tox_level_2', 'tox_level_3', 'tox_level_4']]
         tox_class_indices = torch.argmax(torch.Tensor(toxicity_classes.values), dim=1).long().to(device)
-    elif 'EPA_level' in embeddings_df.columns:
-        # Case 2: EPA levels are stored in a single column with values 1, 2, 3, 4
-        tox_class_indices = torch.Tensor(embeddings_df['EPA_level'].values - 1).long().to(device)  # Convert to 0-based index
+    elif 'tox_level' in embeddings_df.columns:
+        # Case 2: tox levels are stored in a single column with values 0, 1, 2, 3, 4
+        tox_class_indices = torch.Tensor(embeddings_df['tox_level'].values).long().to(device)  
     else:
-        raise ValueError("The input DataFrame must contain either one-hot columns 'EPA_level_1' to 'EPA_level_4' or a single 'EPA_level' column.")
+        raise ValueError("The input DataFrame must contain either one-hot columns 'tox_level_0' to 'tox_level_4' or a single 'tox_level' column.")
 
     return concatenated_embeddings_tensor, tox_class_indices
 
@@ -3327,7 +3329,7 @@ def train_toxicity_classifier_134(model, train_data, val_data, epochs, learning_
 ### ============================ DIRECT TOXICITY PREDICTION FROM SPECTRA ============================== ###
 # This model uses spectra + conditions to predict toxicity directly
 class Direct_Toxicity_Encoder(nn.Module):
-    def __init__(self, input_size, num_classes=4, num_layers=5, dropout_rate=0.3):
+    def __init__(self, input_size, num_classes=5, num_layers=5, dropout_rate=0.3):
         """
         Direct toxicity prediction encoder that takes spectra + conditions as input.
         
@@ -3336,7 +3338,7 @@ class Direct_Toxicity_Encoder(nn.Module):
         input_size : int
             Size of input (spectra + one-hot encoded group + one-hot encoded CE_clean)
         num_classes : int
-            Number of toxicity classes (default: 4 for EPA levels 1-4)
+            Number of toxicity classes (default: 5 for tox levels 0-4)
         num_layers : int
             Number of layers in the network
         dropout_rate : float
@@ -3381,7 +3383,7 @@ def create_dataset_tensors_direct_toxicity_e1e2(spectra_dataset, device, start_i
     Parameters:
     ----------
     spectra_dataset : pd.DataFrame
-        DataFrame containing spectral data and chemical labels with Group, CE_clean, and EPA_level column(s).
+        DataFrame containing spectral data and chemical labels with Group, CE_clean, and tox_level column(s).
     device : torch.device
         The device (CPU or GPU) on which to store the tensors.
     start_idx : int, optional
@@ -3394,7 +3396,7 @@ def create_dataset_tensors_direct_toxicity_e1e2(spectra_dataset, device, start_i
     tuple
         A tuple containing:
         - spectra_with_ext_tensor (torch.Tensor): Tensor of spectral data concatenated with one-hot encoded group and collision energy.
-        - tox_class_indices (torch.Tensor): Tensor of 4-class toxicity labels (integer class values: 0–3).
+        - tox_class_indices (torch.Tensor): Tensor of 5-class toxicity labels (integer class values: 0–4).
         - spectra_indices_tensor (torch.Tensor): Tensor of indices.
     """
     
@@ -3415,15 +3417,15 @@ def create_dataset_tensors_direct_toxicity_e1e2(spectra_dataset, device, start_i
     spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
 
     # Toxicity label processing: determine if we use one-hot columns or a single-class column
-    if {'EPA_level_1', 'EPA_level_2', 'EPA_level_3', 'EPA_level_4'}.issubset(spectra_dataset.columns):
-        # Case 1: EPA levels are one-hot encoded across multiple columns
-        toxicity_classes = spectra_dataset[['EPA_level_1', 'EPA_level_2', 'EPA_level_3', 'EPA_level_4']]
+    if {'tox_level_0', 'tox_level_1', 'tox_level_2', 'tox_level_3', 'tox_level_4'}.issubset(spectra_dataset.columns):
+        # Case 1: tox levels are one-hot encoded across multiple columns
+        toxicity_classes = spectra_dataset[['tox_level_0', 'tox_level_1', 'tox_level_2', 'tox_level_3', 'tox_level_4']]
         tox_class_indices = torch.argmax(torch.Tensor(toxicity_classes.values), dim=1).long().to(device)
-    elif 'EPA_level' in spectra_dataset.columns:
-        # Case 2: EPA levels are stored in a single column with values 1, 2, 3, 4
-        tox_class_indices = torch.Tensor(spectra_dataset['EPA_level'].values - 1).long().to(device)  # Convert to 0-based index
+    elif 'tox_level' in spectra_dataset.columns:
+        # Case 2: tox levels are stored in a single column with values 0, 1, 2, 3, 4
+        tox_class_indices = torch.Tensor(spectra_dataset['tox_level'].values).long().to(device)  # Already 0-based index
     else:
-        raise ValueError("The input DataFrame must contain either one-hot columns 'EPA_level_1' to 'EPA_level_4' or a single 'EPA_level' column.")
+        raise ValueError("The input DataFrame must contain either one-hot columns 'tox_level_0' to 'tox_level_4' or a single 'tox_level' column.")
 
     return spectra_with_ext_tensor, tox_class_indices, spectra_indices_tensor
 
