@@ -12,10 +12,10 @@ import function_depot as fd
 
 #### ==== USER-SETTINGS: CHOOSE DATASET AND REPEATS ==== ####
 # --- Dataset config (set these!) ---
-bin_size = 1.0       
-threshold = 0.05     
+bin_size = 1.0  # and 0.1     
+threshold = 0.05  # and 0.5
 dataset_name = 'bin1_thresh0_05_df_spectra'  # <-- must match parquet file in grid_search_folder
-num_loops = 10       # how many repeated train/val splits & models
+num_loops = 5       # how many repeated train/val splits & models
 
 # --- Output folders (all must exist or will be made) ---
 VAL_INT_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_cond_enc_134_loop_intermediate"
