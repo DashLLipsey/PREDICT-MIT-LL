@@ -189,12 +189,12 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         removed_count = original_count - len(dataset_no_super_test)
         print(f"Removed {removed_count} samples from super test set")
 
-        # # ---- Remove rows where df6_spectra synthetic==1 ----
-        # synthetic_ids = set(df6_spectra.loc[df6_spectra['synthetic'] == 1, 'index_id'])
-        # before_synth = len(dataset_no_super_test)
-        # dataset_no_super_test = dataset_no_super_test[~dataset_no_super_test['index_id'].isin(synthetic_ids)].copy()
-        # after_synth = len(dataset_no_super_test)
-        # print(f"Removed {before_synth - after_synth} samples with synthetic==1")
+        # ---- Remove rows where df6_spectra synthetic==1 ----
+        synthetic_ids = set(df6_spectra.loc[df6_spectra['synthetic'] == 1, 'index_id'])
+        before_synth = len(dataset_no_super_test)
+        dataset_no_super_test = dataset_no_super_test[~dataset_no_super_test['index_id'].isin(synthetic_ids)].copy()
+        after_synth = len(dataset_no_super_test)
+        print(f"Removed {before_synth - after_synth} samples with synthetic==1")
 
         # Add Group and CE_clean columns
         if 'Group' not in dataset_no_super_test.columns:
@@ -370,7 +370,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         intermediate_df['train'] = [1] * len(train_data_processed) + [0] * len(test_data_processed)
         
         # Save intermediate embeddings
-        intermediate_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_cond_enc_intermediate"
+        intermediate_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_intermediate"
         os.makedirs(intermediate_folder, exist_ok=True)
         
         if 'thresh_zero' in dataset_name:
@@ -456,7 +456,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             super_test_emb_df['train'] = 0  # All super test samples are not in training set
 
             # Save super test intermediate embeddings
-            super_test_intermediate_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_cond_enc_intermediate_super_test"
+            super_test_intermediate_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_super_test_intermediate"
             os.makedirs(super_test_intermediate_folder, exist_ok=True)
             if 'thresh_zero' in dataset_name:
                 bin_part = dataset_name.split('_thresh_zero')[0]
@@ -600,7 +600,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             thresh_part = parts[1].split('_df_spectra')[0]
             threshold_part = f"thresh{thresh_part}"
 
-        full_val_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_134e1e2_2stepclassi_df6"
+        full_val_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop"
         os.makedirs(full_val_output_folder, exist_ok=True)
         full_val_predictions_filename = f"cond_enc_{bin_part}_{threshold_part}_df_spectra.parquet"
         full_val_predictions_path = os.path.join(full_val_output_folder, full_val_predictions_filename)
@@ -617,7 +617,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         print(f"{'='*80}")
 
         # Load intermediate embeddings for super test set
-        super_test_intermediate_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_cond_enc_intermediate_super_test"
+        super_test_intermediate_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_super_test_intermediate"
         if 'thresh_zero' in dataset_name:
             bin_part = dataset_name.split('_thresh_zero')[0]
             threshold_part = "thresh_zero"
@@ -658,7 +658,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
                     super_test_intermediate_df[col] = super_test_intermediate_df[col].values
 
             # Save super test set predictions
-            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_134e1e2_2stepclassi_df6_super_test"
+            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_super_test"
             os.makedirs(super_test_output_folder, exist_ok=True)
             super_test_predictions_filename = f"super_test_cond_enc_{bin_part}_{threshold_part}_df_spectra.parquet"
             super_test_predictions_path = os.path.join(super_test_output_folder, super_test_predictions_filename)

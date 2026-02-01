@@ -152,12 +152,12 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         removed_count = original_count - len(dataset_no_super_test)
         print(f"Removed {removed_count} samples from super test set")
         
-        # # ---- Remove rows where df6_spectra synthetic==1 ----
-        # synthetic_ids = set(df6_spectra.loc[df6_spectra['synthetic'] == 1, 'index_id'])
-        # before_synth = len(dataset_no_super_test)
-        # dataset_no_super_test = dataset_no_super_test[~dataset_no_super_test['index_id'].isin(synthetic_ids)].copy()
-        # after_synth = len(dataset_no_super_test)
-        # print(f"Removed {before_synth - after_synth} samples with synthetic==1")
+        # ---- Remove rows where df6_spectra synthetic==1 ----
+        synthetic_ids = set(df6_spectra.loc[df6_spectra['synthetic'] == 1, 'index_id'])
+        before_synth = len(dataset_no_super_test)
+        dataset_no_super_test = dataset_no_super_test[~dataset_no_super_test['index_id'].isin(synthetic_ids)].copy()
+        after_synth = len(dataset_no_super_test)
+        print(f"Removed {before_synth - after_synth} samples with synthetic==1")
 
         # Add Group and CE_clean columns
         if 'Group' not in dataset_no_super_test.columns:
@@ -348,7 +348,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             threshold_part = f"thresh{thresh_part}"
         
         # Direct encoder predictions output folder
-        full_val_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_df6"
+        full_val_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_synth_abl_loop"
         os.makedirs(full_val_output_folder, exist_ok=True)
 
         full_val_predictions_filename = f"direct_tox_{bin_part}_{threshold_part}_df_spectra.parquet"
@@ -415,7 +415,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             
             # Save super test set predictions
             # Direct encoder predictions output folder
-            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_df6_super_test"
+            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_synth_abl_loop_super_test"
             os.makedirs(super_test_output_folder, exist_ok=True)
 
             super_test_predictions_filename = f"super_test_direct_tox_{bin_part}_{threshold_part}_df_spectra.parquet"
