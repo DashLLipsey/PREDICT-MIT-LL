@@ -1,35 +1,41 @@
-# Basic Package Imports
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-# Non-basic package imports
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 from torch.nn import CrossEntropyLoss
-import requests
+import os, sys
 
-# Packages I don't understand
-from fcd_torch import FCD
-import rdkit
-from collections import Counter
-import gc
-import pickle
-import wandb
-
-# Add the Python_files directory to the Python path
-import sys
-import os
 sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
-
-# Now you can import your modules
 import functions_enc as f
 import function_depot as fd
 
-##### ==================== SUPER TEST SET SMILES ==================== #####
-# Define super test set SMILES to remove from training
+#### ==== USER-SETTINGS: CHOOSE DATASET AND REPEATS ==== ####
+# --- Dataset config (set these!) ---
+bin_size = 1.0  # 1.0 and 0.1     
+threshold = 0.5  # 0.5 and 0.05
+dataset_name = 'bin1_thresh0_5_df_spectra'  # <-- must match parquet file in grid_search_folder
+num_loops = 10       # how many repeated train/val splits & models
+
+# --- Output folders (all must exist or will be made) ---
+VAL_INT_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_intermediate"
+VAL_FINAL_DIR = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop"
+SUPER_INT_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_super_test_intermediate"
+SUPER_FINAL_DIR = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_super_test"
+for d in [VAL_INT_DIR, VAL_FINAL_DIR, SUPER_INT_DIR, SUPER_FINAL_DIR]:
+    os.makedirs(d, exist_ok=True)
+
+# Step 1 embedding inputs
+name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_chemnet.parquet")
+morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_morganfp.parquet")
+filtered_morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_filtered_morganfp.parquet")
+
+df6_subset = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_subset.parquet")
+df6_spectra = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_spectra.parquet")
+grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes_df6"
+dataset_path = os.path.join(grid_search_folder, f"{dataset_name}.parquet")
+
+# Super test SMILES - (copy full list from your script)
 super_test_smiles = [
     'COC(=O)C=C(C)OP(=O)(OC)OC',
     'COc1cc2c(c3oc(=O)c4c(c13)CCC4=O)[C@@H]1C=CO[C@@H]1O2',
@@ -54,652 +60,313 @@ super_test_smiles = [
     'NC(C(=O)O)c1ccccc1'
 ]
 
-def parse_dataset_name(dataset_name):
-    """Extract bin size and threshold from dataset name"""
-    if 'thresh_zero' in dataset_name:
-        # Extract bin size
-        bin_part = dataset_name.split('_thresh_zero')[0].replace('bin', '')
-        bin_size = float(bin_part.replace('_', '.'))
-        threshold = 0.0
-    else:
-        # Extract bin size and threshold
-        parts = dataset_name.split('_thresh')
-        bin_part = parts[0].replace('bin', '')
-        bin_size = float(bin_part.replace('_', '.'))
-        
-        thresh_part = parts[1].split('_df_spectra')[0]
-        threshold = float(thresh_part.replace('_', '.'))
-    
-    return bin_size, threshold
-
-# Storage for results
-two_step_results = [] 
-
-# ==================== STEP 1: EMBEDDING MODEL PARAMETERS ==================== #
-embedding_output_size = None  # Will be set dynamically based on data (512 + 2048 + 2048)
+#### ==== Model params (as your original script) ==== ####
 embedding_num_layers = 4
 embedding_batch_size = 512
 embedding_epochs = 500
 embedding_lr = 0.0001
-lambda1 = 5  # For ChemNet embeddings
-lambda3 = 10  # For regular Morgan fingerprints
-lambda4 = 15  # For filtered Morgan fingerprints
+lambda1 = 5
+lambda3 = 10
+lambda4 = 15
 
-# Loss functions for embeddings
-criterion1 = nn.MSELoss()  # ChemNet embeddings
-criterion3 = nn.MSELoss()  # Morgan fingerprints
-criterion4 = nn.MSELoss()  # Filtered Morgan fingerprints
-
-# ==================== STEP 2: TOXICITY CLASSIFIER PARAMETERS ==================== #
 tox_num_layers = 8
 tox_batch_size = 256
-tox_epochs = 250
+tox_epochs = 500
 tox_lr = 0.0001
 tox_num_classes = 5
-
-# Loss function for toxicity classification
+criterion1 = nn.MSELoss()
+criterion3 = nn.MSELoss()
+criterion4 = nn.MSELoss()
 tox_criterion = CrossEntropyLoss()
 
-# TWO-STEP TRAINING LOOP - Process all grid search datasets
-print("=== TWO-STEP TRAINING: EMBEDDINGS THEN TOXICITY CLASSIFICATION ===")
-print(f"Super test SMILES to remove from training: {len(super_test_smiles)}")
-
-# Set up device
 device = fd.set_up_gpu()
 
-# Load in internal condition true values
-name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_chemnet.parquet")
-morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_morganfp.parquet")
-filtered_morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_filtered_morganfp.parquet")
+regular_morgan_bits = morgan_df.shape[1] - 1
+filtered_morgan_bits = filtered_morgan_df.shape[1] - 1
+embedding_output_size = 512 + regular_morgan_bits + filtered_morgan_bits
 
-# Load in internal conditions with gaussian noise replacing the true embeddings
-# name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_chemnet_noise.parquet")
-# morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_morganfp_noise.parquet")
-# filtered_morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_filtered_morganfp_noise.parquet")
-
-# Load the original dataset for response mapping
-df6_subset = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_subset.parquet")
-df6_spectra = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_spectra.parquet")
-
-# Load in grid search datasets
-grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes_df6"
-
-# Get all dataset files from the grid search folder
-dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
-
-# Filter for allowed bin sizes and thresholds
-allowed_bin_prefixes = ['bin1_'] 
-allowed_threshold_suffixes = ['thresh0_05']
-
-# # Full set of bin and threshold values
-# allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin2_', 'bin5_', 'bin10_',
-#                         'bin25_', 'bin50_', 'bin100_', 'bin200_', 'bin500_'] # 'bin0_05' 
-# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
-#                              'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
-#                              'thresh50', 'thresh100']
-
-# # # Full set of bin and threshold values
-# allowed_bin_prefixes = [ 'bin0_05']  
-# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_001', 'thresh0_005', 'thresh0_01', 'thresh0_05', 
-#                              'thresh0_1', 'thresh0_5', 'thresh1', 'thresh2', 'thresh5', 'thresh10', 
-#                              'thresh50', 'thresh100']
-
-# Filter dataset files to only include allowed bin sizes and thresholds
-dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
-dataset_files = [f for f in dataset_files if any(suffix in f for suffix in allowed_threshold_suffixes)]
-
-dataset_names = [f.replace('.parquet', '') for f in dataset_files]
-
-print(f"Found {len(dataset_names)} datasets to process (filtered by bin sizes and thresholds)")
-
-# Create Group and CE_clean mappings
-print("Creating Group mapping from df6_spectra...")
 id_to_group = dict(zip(df6_spectra['index_id'], df6_spectra['Group']))
-print(f"Group mapping created with {len(id_to_group)} entries")
-
-print("Creating CE_clean mapping from df6_spectra...")
 id_to_ce_clean = dict(zip(df6_spectra['index_id'], df6_spectra['CE_clean']))
-print(f"CE_clean mapping created with {len(id_to_ce_clean)} entries")
 
-# Calculate output size from the fingerprint data
-regular_morgan_bits = morgan_df.shape[1] - 1  # Subtract 1 for SMILES_spectra column
-filtered_morgan_bits = filtered_morgan_df.shape[1] - 1  # Subtract 1 for SMILES_spectra column
-embedding_output_size = 512 + regular_morgan_bits + filtered_morgan_bits  # ChemNet + Morgan + Filtered Morgan
-print(f"Calculated embedding output size: {embedding_output_size} (512 ChemNet + {regular_morgan_bits} Morgan + {filtered_morgan_bits} Filtered Morgan)")
+# LOAD original dataset just once
+orig_dataset = pd.read_parquet(dataset_path)
+orig_dataset = pd.DataFrame(orig_dataset) if not isinstance(orig_dataset, pd.DataFrame) else orig_dataset
 
-# Loop through each dataset
-for i, dataset_name in enumerate(sorted(dataset_names), 1):
-    print(f"\n{'='*80}")
-    print(f"Processing {i}/{len(dataset_names)}: {dataset_name}")
-    print(f"{'='*80}")
-    
-    try:
-        # Load dataset from parquet file
-        dataset_path = os.path.join(grid_search_folder, f"{dataset_name}.parquet")
-        dataset = pd.read_parquet(dataset_path)
+for loop_counter in range(num_loops):
+    print(f'\n========== LOOP {loop_counter+1}/{num_loops} ==========')
 
-        if not isinstance(dataset, pd.DataFrame):
-            dataset = pd.DataFrame(dataset)
+    # SPLIT, FILTER, MAP GROUP/CLEAN (re-randomize every loop!)
+    dataset = orig_dataset.copy()
+    dataset_no_super_test = dataset[~dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
+    # ---- Remove rows where df6_spectra synthetic==1 ----
+    synthetic_ids = set(df6_spectra.loc[df6_spectra['synthetic'] == 1, 'index_id'])
+    before_synth = len(dataset_no_super_test)
+    dataset_no_super_test = dataset_no_super_test[~dataset_no_super_test['index_id'].isin(synthetic_ids)].copy()
+    after_synth = len(dataset_no_super_test)
+    print(f"Removed {before_synth - after_synth} samples with synthetic==1")
+    if 'Group' not in dataset_no_super_test.columns:
+        dataset_no_super_test['Group'] = dataset_no_super_test['index_id'].map(id_to_group).fillna('Unknown')
+    if 'CE_clean' not in dataset_no_super_test.columns:
+        dataset_no_super_test['CE_clean'] = dataset_no_super_test['index_id'].map(id_to_ce_clean).fillna('Unknown')
+    counts = dataset_no_super_test['SMILES_spectra'].value_counts()
+    valid_smiles = counts[counts >= 4].index
+    filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
 
-        print(f"Loaded {dataset_name} - Shape: {dataset.shape}")
-        
-        # Remove super test SMILES from training data
-        original_count = len(dataset)
-        dataset_no_super_test = dataset[~dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
-        removed_count = original_count - len(dataset_no_super_test)
-        print(f"Removed {removed_count} samples from super test set")
+    # Split train/test with SEED = loop_counter
+    smiles_groups = filtered_dataset.groupby('SMILES_spectra')
+    train_indices, test_indices = [], []
+    np.random.seed(loop_counter + 42)
+    for smiles, group in smiles_groups:
+        idx = group.index.values
+        n = len(idx)
+        np.random.shuffle(idx)
+        split = n // 2
+        test_indices.extend(idx[:split])
+        train_indices.extend(idx[split:])
+    train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
+    test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
 
-        # ---- Remove rows where df6_spectra synthetic==1 ----
-        synthetic_ids = set(df6_spectra.loc[df6_spectra['synthetic'] == 1, 'index_id'])
-        before_synth = len(dataset_no_super_test)
-        dataset_no_super_test = dataset_no_super_test[~dataset_no_super_test['index_id'].isin(synthetic_ids)].copy()
-        after_synth = len(dataset_no_super_test)
-        print(f"Removed {before_synth - after_synth} samples with synthetic==1")
+    train_data['index'] = range(len(train_data))
+    test_data['index'] = range(len(test_data))
+    train_data_processed = fd.add_response_and_log_response(train_data.copy(), df6_subset, smiles_col='SMILES_spectra')
+    train_data_processed = fd.add_tox_levels(train_data_processed)
+    test_data_processed = fd.add_response_and_log_response(test_data.copy(), df6_subset, smiles_col='SMILES_spectra')
+    test_data_processed = fd.add_tox_levels(test_data_processed)
 
-        # Add Group and CE_clean columns
-        if 'Group' not in dataset_no_super_test.columns:
-            dataset_no_super_test['Group'] = dataset_no_super_test['index_id'].map(id_to_group).fillna('Unknown')
-        
-        if 'CE_clean' not in dataset_no_super_test.columns:
-            dataset_no_super_test['CE_clean'] = dataset_no_super_test['index_id'].map(id_to_ce_clean).fillna('Unknown')
-                
-        # Apply filtering (>=4 spectra per SMILES)
-        counts = dataset_no_super_test['SMILES_spectra'].value_counts()
-        valid_smiles = counts[counts >= 4].index
-        filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
-        
-        print(f"After filtering (>=4 spectra per SMILES): {filtered_dataset.shape}")
-        
-        # Train/test split for model training
-        smiles_groups = filtered_dataset.groupby('SMILES_spectra')
-        train_indices = []
-        test_indices = []
+    # ==== STEP 1: EMBEDDING ====
+    x_train_with_ext, y_train_emb, y_train_morgan, y_train_filtered_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_134e1e2(
+        train_data_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-11)
+    x_val_with_ext, y_val_emb, y_val_morgan, y_val_filtered_morgan, val_indices_tensor = fd.create_dataset_tensors_condenc_134e1e2(
+        test_data_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-11)
 
-        np.random.seed(42)
-        for smiles, group in smiles_groups:
-            idx = group.index.values
-            n = len(idx)
-            np.random.shuffle(idx)
-            split = n // 2
-            test_indices.extend(idx[:split])
-            train_indices.extend(idx[split:])
-        
-        train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
-        test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
-        
-        # Create set of training indices for later tracking
-        train_indices_set = set(train_indices)
-        
-        # Add index column
-        train_data['index'] = range(len(train_data))
-        test_data['index'] = range(len(test_data))
-                    
-        # Process datasets - add response and tox levels
-        train_data_processed = fd.add_response_and_log_response(train_data.copy(), df6_subset, smiles_col='SMILES_spectra')
-        train_data_processed = fd.add_tox_levels(train_data_processed)
-        
-        test_data_processed = fd.add_response_and_log_response(test_data.copy(), df6_subset, smiles_col='SMILES_spectra')
-        test_data_processed = fd.add_tox_levels(test_data_processed)
+    actual_input_size = x_train_with_ext.shape[1]
+    embedding_model = fd.Cond_Encoder_134_dropout(input_size=actual_input_size, output_size=embedding_output_size,
+                                                  num_layers=embedding_num_layers, dropout_rate=0.2).to(device)
 
-        # ==================== STEP 1: TRAIN EMBEDDING MODEL ==================== #
-        print(f"\n{'='*80}")
-        print("STEP 1: Training Embedding Model (ChemNet + Morgan + Filtered Morgan)")
-        print(f"{'='*80}")
-        
-        # New tesndor creation functions (stop_idx=-10 excludes Response, log_response, and other metadata)
-        print("Creating training tensors for embeddings...")
-        x_train_with_ext, y_train_emb, y_train_morgan, y_train_filtered_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_134e1e2(
-            train_data_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-11)
+    train_loader_emb = DataLoader(TensorDataset(x_train_with_ext, y_train_emb, y_train_morgan, y_train_filtered_morgan, train_indices_tensor),
+                                  batch_size=embedding_batch_size, shuffle=True, pin_memory=False, num_workers=0)
+    val_loader_emb = DataLoader(TensorDataset(x_val_with_ext, y_val_emb, y_val_morgan, y_val_filtered_morgan, val_indices_tensor),
+                                batch_size=embedding_batch_size, shuffle=False, pin_memory=False, num_workers=0)
+    embedding_config = {
+        'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
+        'wandb_project': 'MIT-Lincoln-Lab',
+        'wandb_name': f"step1_embedding_{dataset_name}_loop{loop_counter}",
+        'gpu': True,
+        'encoder_type': "Step 1: Embedding Model (ChemNet + Morgan + Filtered Morgan + Group + CE_clean)",
+        'batch_size': embedding_batch_size,
+        'output_size': embedding_output_size,
+        'num_layers': embedding_num_layers,
+        'learning_rate': embedding_lr,
+        'epochs': embedding_epochs,
+        'lambda1': lambda1,
+        'lambda3': lambda3,
+        'lambda4': lambda4,
+        'Bin': bin_size,
+        'Threshold': threshold,
+        'super_test_removed': True,
+        'loop_counter': loop_counter
+    }
 
-        x_val_with_ext, y_val_emb, y_val_morgan, y_val_filtered_morgan, val_indices_tensor = fd.create_dataset_tensors_condenc_134e1e2(
-            test_data_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-11)
+    trained_embedding_model = fd.train_model_condenc_134e1e2(
+        model=embedding_model,
+        train_data=train_loader_emb,
+        val_data=val_loader_emb,
+        epochs=embedding_epochs,
+        learning_rate=embedding_lr,
+        criterion1=criterion1,
+        criterion3=criterion3,
+        criterion4=criterion4,
+        lambda1=lambda1,
+        lambda3=lambda3,
+        lambda4=lambda4,
+        device=device,
+        config=embedding_config
+    )
 
-        # Create embedding model
-        actual_input_size = x_train_with_ext.shape[1]
-        print(f"Creating embedding model with input size: {actual_input_size}")
+    # ==== STEP 1: GENERATE EMBEDDINGS FOR ALL ====
+    with torch.no_grad():
+        train_embeddings_combined = embedding_model(x_train_with_ext).cpu()
+        val_embeddings_combined = embedding_model(x_val_with_ext).cpu()
+    train_pred_chemnet = train_embeddings_combined[:, :512]
+    train_pred_morgan = train_embeddings_combined[:, 512:512+regular_morgan_bits]
+    train_pred_filtered_morgan = train_embeddings_combined[:, 512+regular_morgan_bits:]
+    val_pred_chemnet = val_embeddings_combined[:, :512]
+    val_pred_morgan = val_embeddings_combined[:, 512:512+regular_morgan_bits]
+    val_pred_filtered_morgan = val_embeddings_combined[:, 512+regular_morgan_bits:]
 
-        # New conditional encoder model (this one with dropout)
-        embedding_model = fd.Cond_Encoder_134_dropout(input_size=actual_input_size,
-                                                    output_size=embedding_output_size, 
-                                                    num_layers=embedding_num_layers,
-                                                    dropout_rate=0.2).to(device)
-        
-        # Create DataLoaders for embedding training
-        train_dataset_emb = TensorDataset(x_train_with_ext, y_train_emb, y_train_morgan, y_train_filtered_morgan, train_indices_tensor)
-        val_dataset_emb = TensorDataset(x_val_with_ext, y_val_emb, y_val_morgan, y_val_filtered_morgan, val_indices_tensor)
-        train_loader_emb = DataLoader(train_dataset_emb, batch_size=embedding_batch_size, shuffle=True, pin_memory=False, num_workers=0)
-        val_loader_emb = DataLoader(val_dataset_emb, batch_size=embedding_batch_size, shuffle=False, pin_memory=False, num_workers=0)
-                
-        # Parse dataset parameters for wandb config
-        bin_size, threshold = parse_dataset_name(dataset_name)
-        
-        # Create wandb config for embedding model
-        embedding_config = {
-            'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
-            'wandb_project': 'MIT-Lincoln-Lab',
-            'wandb_name': f"step1_embedding_{dataset_name}",
-            'gpu': True,
-            'encoder_type': "Step 1: Embedding Model (ChemNet + Morgan + Filtered Morgan + Group + CE_clean)",
-            'batch_size': embedding_batch_size,
-            'output_size': embedding_output_size,
-            'num_layers': embedding_num_layers,
-            'learning_rate': embedding_lr,
-            'epochs': embedding_epochs,
-            'lambda1': lambda1,
-            'lambda3': lambda3,
-            'lambda4': lambda4,
-            'Bin': bin_size,
-            'Threshold': threshold,
-            'super_test_removed': True,
-        }
+    all_pred_chemnet = torch.cat([train_pred_chemnet, val_pred_chemnet], dim=0)
+    all_pred_morgan = torch.cat([train_pred_morgan, val_pred_morgan], dim=0)
+    all_pred_filtered_morgan = torch.cat([train_pred_filtered_morgan, val_pred_filtered_morgan], dim=0)
 
-        # Train embedding model
-        print("Training embedding model...")
+    emb_cols = [f'cond_emb_{j}' for j in range(512)]
+    morgan_cols = [f'cond_morgan_{j}' for j in range(regular_morgan_bits)]
+    filtered_morgan_cols = [f'cond_filtered_morgan_{j}' for j in range(filtered_morgan_bits)]
 
-        # Embedding conditional encoder training function
-        trained_embedding_model = fd.train_model_condenc_134e1e2(
-            model=embedding_model,
-            train_data=train_loader_emb,
-            val_data=val_loader_emb,
-            epochs=embedding_epochs,
-            learning_rate=embedding_lr,
-            criterion1=criterion1,
-            criterion3=criterion3,
-            criterion4=criterion4,
-            lambda1=lambda1,
-            lambda3=lambda3,
-            lambda4=lambda4,
-            device=device,
-            config=embedding_config
-        )
-        
-        # ==================== GENERATE EMBEDDINGS FOR STEP 2 ==================== #
-        # Here we need to use the model to generate embeddings that we can use to train the model to predict toxicity
-        print("\nGenerating embeddings for full filtered dataset...")
-        
-        # Generate embeddings for entire filtered dataset (both train and val)
-        embedding_model.eval()
+    intermediate_df = pd.DataFrame(all_pred_chemnet.numpy(), columns=emb_cols)
+    intermediate_df = pd.concat([intermediate_df, pd.DataFrame(all_pred_morgan.numpy(), columns=morgan_cols)], axis=1)
+    intermediate_df = pd.concat([intermediate_df, pd.DataFrame(all_pred_filtered_morgan.numpy(), columns=filtered_morgan_cols)], axis=1)
+
+    combined_processed = pd.concat([train_data_processed, test_data_processed], axis=0).reset_index(drop=True)
+    intermediate_df['SMILES_spectra'] = combined_processed['SMILES_spectra'].values
+    intermediate_df['index_id'] = combined_processed['index'].values
+    intermediate_df['Response'] = combined_processed['Response'].values
+    intermediate_df['log_response'] = combined_processed['log_response'].values
+    if 'tox_level' in combined_processed.columns:
+        intermediate_df['tox_level'] = combined_processed['tox_level'].values
+    for k in range(5):
+        col = f'tox_level_{k}'
+        if col in combined_processed.columns:
+            intermediate_df[col] = combined_processed[col].values
+    intermediate_df['train'] = [1]*len(train_data_processed) + [0]*len(test_data_processed)
+
+    interm_filename = f"intermediate_embeddings_{dataset_name}_loop{loop_counter}.parquet"
+    interm_path = os.path.join(VAL_INT_DIR, interm_filename)
+    intermediate_df.to_parquet(interm_path, index=False)
+    print(f"✓ Saved intermediate embeddings: {interm_filename}")
+
+    # ==== STEP 1: SUPER-TEST EMBEDDINGS ====
+    super_test_df = dataset[dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
+    if len(super_test_df) > 0:
+        # Remove synthetic data from super test set
+        before_synth_super = len(super_test_df)
+        super_test_df = super_test_df[~super_test_df['index_id'].isin(synthetic_ids)].copy()
+        after_synth_super = len(super_test_df)
+        print(f"Removed {before_synth_super - after_synth_super} synthetic samples from super test set")
+        if 'Group' not in super_test_df.columns:
+            super_test_df['Group'] = super_test_df['index_id'].map(id_to_group).fillna('Unknown')
+        if 'CE_clean' not in super_test_df.columns:
+            super_test_df['CE_clean'] = super_test_df['index_id'].map(id_to_ce_clean).fillna('Unknown')
+
+        super_test_df['index'] = range(len(super_test_df))
+        super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
+        super_test_processed = fd.add_tox_levels(super_test_processed)
+
+        # Ensure super test processed columns match train_data_processed columns
+        super_test_processed = super_test_processed[train_data_processed.columns]
+
+        x_super_test_with_ext, y_super_test_emb, y_super_test_morgan, y_super_test_filtered_morgan, _ = fd.create_dataset_tensors_condenc_134e1e2(
+            super_test_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-11)
         with torch.no_grad():
-            train_embeddings_combined = embedding_model(x_train_with_ext).cpu()
-            val_embeddings_combined = embedding_model(x_val_with_ext).cpu()
-        
-        # Split the combined embeddings
-        train_pred_chemnet = train_embeddings_combined[:, :512]
-        train_pred_morgan = train_embeddings_combined[:, 512:512+regular_morgan_bits]
-        train_pred_filtered_morgan = train_embeddings_combined[:, 512+regular_morgan_bits:]
-        
-        val_pred_chemnet = val_embeddings_combined[:, :512]
-        val_pred_morgan = val_embeddings_combined[:, 512:512+regular_morgan_bits]
-        val_pred_filtered_morgan = val_embeddings_combined[:, 512+regular_morgan_bits:]
-        
-        print(f"Generated embeddings - Train: {train_embeddings_combined.shape}, Val: {val_embeddings_combined.shape}")
-        
-        # Combine train and val embeddings to create full dataset with metadata
-        all_pred_chemnet = torch.cat([train_pred_chemnet, val_pred_chemnet], dim=0)
-        all_pred_morgan = torch.cat([train_pred_morgan, val_pred_morgan], dim=0)
-        all_pred_filtered_morgan = torch.cat([train_pred_filtered_morgan, val_pred_filtered_morgan], dim=0)
-        
-        # Create embedding column names
-        emb_cols = [f'cond_emb_{j}' for j in range(512)]
-        morgan_cols = [f'cond_morgan_{j}' for j in range(regular_morgan_bits)]
-        filtered_morgan_cols = [f'cond_filtered_morgan_{j}' for j in range(filtered_morgan_bits)]
-        
-        # Create DataFrame with embeddings
-        intermediate_df = pd.DataFrame(all_pred_chemnet.numpy(), columns=emb_cols)
-        intermediate_df = pd.concat([intermediate_df, pd.DataFrame(all_pred_morgan.numpy(), columns=morgan_cols)], axis=1)
-        intermediate_df = pd.concat([intermediate_df, pd.DataFrame(all_pred_filtered_morgan.numpy(), columns=filtered_morgan_cols)], axis=1)
-        
-        # Add metadata from combined train and val datasets
-        combined_processed = pd.concat([train_data_processed, test_data_processed], axis=0).reset_index(drop=True)
-        intermediate_df['SMILES_spectra'] = combined_processed['SMILES_spectra'].values
-        intermediate_df['index_id'] = combined_processed['index'].values
-        intermediate_df['Response'] = combined_processed['Response'].values
-        intermediate_df['log_response'] = combined_processed['log_response'].values
-        
-        # Adtox level columns for toxicity labels
-        if 'tox_level' in combined_processed.columns:
-            intermediate_df['tox_level'] = combined_processed['tox_level'].values
-        if 'tox_level_0' in combined_processed.columns:
-            intermediate_df['tox_level_0'] = combined_processed['tox_level_0'].values
-            intermediate_df['tox_level_1'] = combined_processed['tox_level_1'].values
-            intermediate_df['tox_level_2'] = combined_processed['tox_level_2'].values
-            intermediate_df['tox_level_3'] = combined_processed['tox_level_3'].values
-            intermediate_df['tox_level_4'] = combined_processed['tox_level_4'].values
-        
-        # Add train indicator (1 for train, 0 for val)
-        intermediate_df['train'] = [1] * len(train_data_processed) + [0] * len(test_data_processed)
-        
-        # Save intermediate embeddings
-        intermediate_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_intermediate"
-        os.makedirs(intermediate_folder, exist_ok=True)
-        
-        if 'thresh_zero' in dataset_name:
-            bin_part = dataset_name.split('_thresh_zero')[0]
-            threshold_part = "thresh_zero"
-        else:
-            parts = dataset_name.split('_thresh')
-            bin_part = parts[0]
-            thresh_part = parts[1].split('_df_spectra')[0]
-            threshold_part = f"thresh{thresh_part}"
-        
-        intermediate_filename = f"intermediate_embeddings_{bin_part}_{threshold_part}_df_spectra.parquet"
-        intermediate_path = os.path.join(intermediate_folder, intermediate_filename)
-        
-        try:
-            intermediate_df.to_parquet(intermediate_path, index=False)
-            print(f"✓ Saved intermediate embeddings to {intermediate_filename}")
-            print(f"  Shape: {intermediate_df.shape}, Train samples: {intermediate_df['train'].sum()}, Val samples: {(intermediate_df['train']==0).sum()}")
-        except Exception as save_error:
-            print(f"✗ ERROR saving intermediate embeddings: {str(save_error)}")
+            super_test_embeddings_combined = embedding_model(x_super_test_with_ext).cpu()
+        super_test_pred_chemnet = super_test_embeddings_combined[:, :512]
+        super_test_pred_morgan = super_test_embeddings_combined[:, 512:512+regular_morgan_bits]
+        super_test_pred_filtered_morgan = super_test_embeddings_combined[:, 512+regular_morgan_bits:]
 
-        # ==================== GENERATE AND SAVE SUPER TEST INTERMEDIATE EMBEDDINGS ==================== #
-        print(f"\n{'='*80}")
-        print("Generating and saving super test set intermediate embeddings")
-        print(f"{'='*80}")
+        super_test_emb_df = pd.DataFrame(super_test_pred_chemnet.numpy(), columns=emb_cols)
+        super_test_emb_df = pd.concat([super_test_emb_df, pd.DataFrame(super_test_pred_morgan.numpy(), columns=morgan_cols)], axis=1)
+        super_test_emb_df = pd.concat([super_test_emb_df, pd.DataFrame(super_test_pred_filtered_morgan.numpy(), columns=filtered_morgan_cols)], axis=1)
+        super_test_emb_df['SMILES_spectra'] = super_test_processed['SMILES_spectra'].values
+        super_test_emb_df['index_id'] = super_test_processed['index'].values
+        super_test_emb_df['Response'] = super_test_processed['Response'].values
+        super_test_emb_df['log_response'] = super_test_processed['log_response'].values
+        if 'tox_level' in super_test_processed.columns:
+            super_test_emb_df['tox_level'] = super_test_processed['tox_level'].values
+        for k in range(5):
+            col = f'tox_level_{k}'
+            if col in super_test_processed.columns:
+                super_test_emb_df[col] = super_test_processed[col].values
+        if 'Group' in super_test_processed.columns:
+            super_test_emb_df['Group'] = super_test_processed['Group'].values
+        if 'CE_clean' in super_test_processed.columns:
+            super_test_emb_df['CE_clean'] = super_test_processed['CE_clean'].values
+        super_test_emb_df['train'] = 0
+        super_interm_filename = f"super_test_intermediate_embeddings_{dataset_name}_loop{loop_counter}.parquet"
+        super_interm_path = os.path.join(SUPER_INT_DIR, super_interm_filename)
+        super_test_emb_df.to_parquet(super_interm_path, index=False)
+        print(f"✓ Saved super test embeddings: {super_interm_filename}")
 
-        # Extract super test set from the original dataset
-        super_test_df = dataset[dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
-        if len(super_test_df) > 0:
-            print(f"Super test set size: {len(super_test_df)} samples")
+    # ==== STEP 2: TOXICITY CLASSIFIER ====
+    train_intermediate_df = intermediate_df[intermediate_df['train']==1].reset_index(drop=True)
+    val_intermediate_df = intermediate_df[intermediate_df['train']==0].reset_index(drop=True)
 
-            # Add Group and CE_clean columns if missing
-            if 'Group' not in super_test_df.columns:
-                super_test_df['Group'] = super_test_df['index_id'].map(id_to_group).fillna('Unknown')
-            if 'CE_clean' not in super_test_df.columns:
-                super_test_df['CE_clean'] = super_test_df['index_id'].map(id_to_ce_clean).fillna('Unknown')
+    train_concat_emb, train_tox_labels = fd.create_dataset_tensors_toxicity_classifier_134(
+        train_intermediate_df, device)
+    val_concat_emb, val_tox_labels = fd.create_dataset_tensors_toxicity_classifier_134(
+        val_intermediate_df, device)
 
-            # Process super test set
-            super_test_df['index'] = range(len(super_test_df))
-            super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
-            super_test_processed = fd.add_tox_levels(super_test_processed)
+    tox_classifier = fd.ToxicityClassifier_134(num_layers=tox_num_layers, num_classes=tox_num_classes, dropout_rate=0.2).to(device)
+    train_loader_tox = DataLoader(TensorDataset(train_concat_emb, train_tox_labels),
+                             batch_size=tox_batch_size, shuffle=True, pin_memory=False, num_workers=0)
+    val_loader_tox = DataLoader(TensorDataset(val_concat_emb, val_tox_labels),
+                             batch_size=tox_batch_size, shuffle=False, pin_memory=False, num_workers=0)
+    tox_config = {
+        'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
+        'wandb_project': 'MIT-Lincoln-Lab',
+        'wandb_name': f"step2_toxicity_{dataset_name}_loop{loop_counter}",
+        'gpu': True,
+        'model_type': "Step 2: Toxicity Classifier",
+        'batch_size': tox_batch_size,
+        'num_layers': tox_num_layers,
+        'num_classes': tox_num_classes,
+        'learning_rate': tox_lr,
+        'epochs': tox_epochs,
+        'Bin': bin_size,
+        'Threshold': threshold,
+        'super_test_removed': True,
+        'loop_counter': loop_counter
+    }
+    trained_tox_classifier, *_ = fd.train_toxicity_classifier_134(
+        model=tox_classifier,
+        train_data=train_loader_tox,
+        val_data=val_loader_tox,
+        epochs=tox_epochs,
+        learning_rate=tox_lr,
+        criterion=tox_criterion,
+        device=device,
+        config=tox_config
+    )
 
-            # Create tensors for super test set (Step 1)
-            x_super_test_with_ext, y_super_test_emb, y_super_test_morgan, y_super_test_filtered_morgan, super_test_indices_tensor = fd.create_dataset_tensors_condenc_134e1e2(
-                super_test_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-11)
+    # Eval: produce logits/preds for all data sets
+    tox_classifier.eval()
+    with torch.no_grad():
+        train_tox_logits = tox_classifier(train_concat_emb).cpu().numpy()
+        val_tox_logits = tox_classifier(val_concat_emb).cpu().numpy()
+    tox_logits_cols = [f'cond_tox_logit_{j}' for j in range(tox_num_classes)]
+    for i, col in enumerate(tox_logits_cols):
+        train_intermediate_df[col] = train_tox_logits[:, i]
+        val_intermediate_df[col] = val_tox_logits[:, i]
+    train_intermediate_df['cond_tox_pred_class'] = np.argmax(train_tox_logits, axis=1)
+    val_intermediate_df['cond_tox_pred_class'] = np.argmax(val_tox_logits, axis=1)
+    full_val_output_df = pd.concat([train_intermediate_df, val_intermediate_df], axis=0).reset_index(drop=True)
+    for col in ['SMILES_spectra', 'index_id', 'Response', 'log_response', 'train', 'tox_level', 'tox_level_0', 'tox_level_1', 'tox_level_2', 'tox_level_3', 'tox_level_4', 'Group', 'CE_clean']:
+        if col in intermediate_df.columns and col not in full_val_output_df.columns:
+            full_val_output_df[col] = intermediate_df[col].values
 
-            # Generate embeddings for super test set
-            embedding_model.eval()
-            with torch.no_grad():
-                super_test_embeddings_combined = embedding_model(x_super_test_with_ext).cpu()
+    # Save intermediate, then FINAL val
+    val_final_fn = f"cond_enc_{dataset_name}_loop{loop_counter}.parquet"
+    val_final_path = os.path.join(VAL_FINAL_DIR, val_final_fn)
+    full_val_output_df.to_parquet(val_final_path, index=False)
+    print(f"✓ Saved FINAL validation preds: {val_final_fn}")
 
-            # Split embeddings
-            super_test_pred_chemnet = super_test_embeddings_combined[:, :512]
-            super_test_pred_morgan = super_test_embeddings_combined[:, 512:512+regular_morgan_bits]
-            super_test_pred_filtered_morgan = super_test_embeddings_combined[:, 512+regular_morgan_bits:]
-
-            # Build DataFrame with embeddings and metadata for super test set
-            emb_cols = [f'cond_emb_{j}' for j in range(512)]
-            morgan_cols = [f'cond_morgan_{j}' for j in range(regular_morgan_bits)]
-            filtered_morgan_cols = [f'cond_filtered_morgan_{j}' for j in range(filtered_morgan_bits)]
-
-            super_test_emb_df = pd.DataFrame(super_test_pred_chemnet.numpy(), columns=emb_cols)
-            super_test_emb_df = pd.concat([super_test_emb_df, pd.DataFrame(super_test_pred_morgan.numpy(), columns=morgan_cols)], axis=1)
-            super_test_emb_df = pd.concat([super_test_emb_df, pd.DataFrame(super_test_pred_filtered_morgan.numpy(), columns=filtered_morgan_cols)], axis=1)
-
-            # Add metadata columns
-            super_test_emb_df['SMILES_spectra'] = super_test_processed['SMILES_spectra'].values
-            super_test_emb_df['index_id'] = super_test_processed['index'].values
-            super_test_emb_df['Response'] = super_test_processed['Response'].values
-            super_test_emb_df['log_response'] = super_test_processed['log_response'].values
-            if 'tox_level' in super_test_processed.columns:
-                super_test_emb_df['tox_level'] = super_test_processed['tox_level'].values
-            if 'tox_level_0' in super_test_processed.columns:
-                super_test_emb_df['tox_level_0'] = super_test_processed['tox_level_0'].values
-                super_test_emb_df['tox_level_1'] = super_test_processed['tox_level_1'].values
-                super_test_emb_df['tox_level_2'] = super_test_processed['tox_level_2'].values
-                super_test_emb_df['tox_level_3'] = super_test_processed['tox_level_3'].values
-                super_test_emb_df['tox_level_4'] = super_test_processed['tox_level_4'].values
-            if 'Group' in super_test_processed.columns:
-                super_test_emb_df['Group'] = super_test_processed['Group'].values
-            if 'CE_clean' in super_test_processed.columns:
-                super_test_emb_df['CE_clean'] = super_test_processed['CE_clean'].values
-            super_test_emb_df['train'] = 0  # All super test samples are not in training set
-
-            # Save super test intermediate embeddings
-            super_test_intermediate_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_super_test_intermediate"
-            os.makedirs(super_test_intermediate_folder, exist_ok=True)
-            if 'thresh_zero' in dataset_name:
-                bin_part = dataset_name.split('_thresh_zero')[0]
-                threshold_part = "thresh_zero"
-            else:
-                parts = dataset_name.split('_thresh')
-                bin_part = parts[0]
-                thresh_part = parts[1].split('_df_spectra')[0]
-                threshold_part = f"thresh{thresh_part}"
-            super_test_intermediate_filename = f"super_test_intermediate_embeddings_{bin_part}_{threshold_part}_df_spectra.parquet"
-            super_test_intermediate_path = os.path.join(super_test_intermediate_folder, super_test_intermediate_filename)
-
-            try:
-                super_test_emb_df.to_parquet(super_test_intermediate_path, index=False)
-                print(f"✓ Saved super test intermediate embeddings to {super_test_intermediate_filename}")
-            except Exception as save_error:
-                print(f"✗ ERROR saving super test intermediate embeddings: {str(save_error)}")
-        else:
-            print("No super test samples found in this dataset")        
-        # ==================== STEP 2: TRAIN TOXICITY CLASSIFIER ==================== #
-        print(f"\n{'='*80}")
-        print("STEP 2: Training Toxicity Classifier")
-        print(f"{'='*80}")
-        
-        # Reload intermediate embeddings
-        print(f"Loading intermediate embeddings from {intermediate_filename}...")
-        intermediate_df_loaded = pd.read_parquet(intermediate_path)
-        
-        # Split by train indicator
-        train_intermediate_df = intermediate_df_loaded[intermediate_df_loaded['train'] == 1].reset_index(drop=True)
-        val_intermediate_df = intermediate_df_loaded[intermediate_df_loaded['train'] == 0].reset_index(drop=True)
-        
-        print(f"Loaded embeddings - Train: {len(train_intermediate_df)}, Val: {len(val_intermediate_df)}")
-        
-        # Create tensors for toxicity classifier
-        train_concat_emb, train_tox_labels = fd.create_dataset_tensors_toxicity_classifier_134(
-            train_intermediate_df, device
-        )
-        
-        val_concat_emb, val_tox_labels = fd.create_dataset_tensors_toxicity_classifier_134(
-            val_intermediate_df, device
-        )
-        
-        # Create toxicity classifier model
-        print(f"Creating toxicity classifier with input size: {train_concat_emb.shape[1]}")
-        
-        # New toxicity classifier model (this one with dropout)
-        tox_classifier = fd.ToxicityClassifier_134(num_layers=tox_num_layers, 
-                                               num_classes=tox_num_classes,
-                                               dropout_rate=0.2).to(device)
-        
-        # Create DataLoaders for toxicity training
-        train_dataset_tox = TensorDataset(train_concat_emb, train_tox_labels)
-        val_dataset_tox = TensorDataset(val_concat_emb, val_tox_labels)
-        train_loader_tox = DataLoader(train_dataset_tox, batch_size=tox_batch_size, shuffle=True, pin_memory=False, num_workers=0)
-        val_loader_tox = DataLoader(val_dataset_tox, batch_size=tox_batch_size, shuffle=False, pin_memory=False, num_workers=0)
-        
-        # Create wandb config for toxicity classifier
-        tox_config = {
-            'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
-            'wandb_project': 'MIT-Lincoln-Lab',
-            'wandb_name': f"step2_toxicity_{dataset_name}",
-            'gpu': True,
-            'model_type': "Step 2: Toxicity Classifier",
-            'batch_size': tox_batch_size,
-            'num_layers': tox_num_layers,
-            'num_classes': tox_num_classes,
-            'learning_rate': tox_lr,
-            'epochs': tox_epochs,
-            'Bin': bin_size,
-            'Threshold': threshold,
-            'super_test_removed': True,
-        }
-        
-        # Train toxicity classifier
-        print("Training toxicity classifier...")
-        # Direct toxicity classifier training function
-        trained_tox_classifier, train_losses, val_losses, train_accs, val_accs = fd.train_toxicity_classifier_134(
-            model=tox_classifier,
-            train_data=train_loader_tox,
-            val_data=val_loader_tox,
-            epochs=tox_epochs,
-            learning_rate=tox_lr,
-            criterion=tox_criterion,
-            device=device,
-            config=tox_config
-        )
-        # ==================== EVALUATE TOXICITY CLASSIFIER ON TRAIN AND TEST SETS ==================== #
-        print(f"\n{'='*80}")
-        print("Evaluating Toxicity Classifier on Train and Test Sets (using intermediate embeddings)")
-        print(f"{'='*80}")
-
-        # Split into train and test sets using the 'train' column
-        train_intermediate_df = intermediate_df_loaded[intermediate_df_loaded['train'] == 1].reset_index(drop=True)
-        test_intermediate_df = intermediate_df_loaded[intermediate_df_loaded['train'] == 0].reset_index(drop=True)
-
-        # Create tensors for toxicity classifier
-        train_concat_emb, train_tox_labels = fd.create_dataset_tensors_toxicity_classifier_134(
-            train_intermediate_df, device
-        )
-        test_concat_emb, test_tox_labels = fd.create_dataset_tensors_toxicity_classifier_134(
-            test_intermediate_df, device
-        )
-
-        # Evaluate on train and test sets
-        tox_classifier.eval()
-        with torch.no_grad():
-            train_tox_logits = tox_classifier(train_concat_emb).cpu().numpy()
-            test_tox_logits = tox_classifier(test_concat_emb).cpu().numpy()
-
-        # Add predictions to DataFrames
-        tox_logits_cols = [f'cond_tox_logit_{j}' for j in range(4)]
-        for i, col in enumerate(tox_logits_cols):
-            train_intermediate_df[col] = train_tox_logits[:, i]
-            test_intermediate_df[col] = test_tox_logits[:, i]
-        train_intermediate_df['cond_tox_pred_class'] = np.argmax(train_tox_logits, axis=1)
-        test_intermediate_df['cond_tox_pred_class'] = np.argmax(test_tox_logits, axis=1)
-
-        # Combine train and test DataFrames (order: train, then test)
-        full_val_output_df = pd.concat([train_intermediate_df, test_intermediate_df], axis=0).reset_index(drop=True)
-
-        # Add/verify all metadata columns from intermediate_df_loaded (if not already present)
-        meta_cols = ['SMILES_spectra', 'index_id', 'Response', 'log_response', 'train']
-        # Add tox level columns if present
-        for col in ['tox_level', 'tox_level_0', 'tox_level_1', 'tox_level_2', 'tox_level_3', 'tox_level_4', 'Group', 'CE_clean']:
-            if col in intermediate_df_loaded.columns and col not in full_val_output_df.columns:
-                full_val_output_df[col] = intermediate_df_loaded[col].values
-
-        # (Optional) Print verification
-        train_count = (full_val_output_df['train'] == 1).sum()
-        test_count = (full_val_output_df['train'] == 0).sum()
-        print(f"Train samples: {train_count}, Test samples: {test_count}, Total: {len(full_val_output_df)}")
-
-        # Save combined predictions with metadata
-        if 'thresh_zero' in dataset_name:
-            bin_part = dataset_name.split('_thresh_zero')[0]
-            threshold_part = "thresh_zero"
-        else:
-            parts = dataset_name.split('_thresh')
-            bin_part = parts[0]
-            thresh_part = parts[1].split('_df_spectra')[0]
-            threshold_part = f"thresh{thresh_part}"
-
-        full_val_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop"
-        os.makedirs(full_val_output_folder, exist_ok=True)
-        full_val_predictions_filename = f"cond_enc_{bin_part}_{threshold_part}_df_spectra.parquet"
-        full_val_predictions_path = os.path.join(full_val_output_folder, full_val_predictions_filename)
-
-        try:
-            full_val_output_df.to_parquet(full_val_predictions_path, index=False)
-            print(f"✓ Successfully saved full validation predictions to {full_val_predictions_filename}")
-        except Exception as save_error:
-            print(f"✗ ERROR saving full validation predictions: {str(save_error)}")
-
-        # ==================== EVALUATE TOXICITY CLASSIFIER ON SUPER TEST SET ==================== #
-        print(f"\n{'='*80}")
-        print("Evaluating Toxicity Classifier on Super Test Set (using intermediate embeddings)")
-        print(f"{'='*80}")
-
-        # Load intermediate embeddings for super test set
-        super_test_intermediate_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_super_test_intermediate"
-        if 'thresh_zero' in dataset_name:
-            bin_part = dataset_name.split('_thresh_zero')[0]
-            threshold_part = "thresh_zero"
-        else:
-            parts = dataset_name.split('_thresh')
-            bin_part = parts[0]
-            thresh_part = parts[1].split('_df_spectra')[0]
-            threshold_part = f"thresh{thresh_part}"
-        super_test_intermediate_filename = f"super_test_intermediate_embeddings_{bin_part}_{threshold_part}_df_spectra.parquet"
-        super_test_intermediate_path = os.path.join(super_test_intermediate_folder, super_test_intermediate_filename)
-
-        if os.path.exists(super_test_intermediate_path):
-            super_test_intermediate_df = pd.read_parquet(super_test_intermediate_path)
-            print(f"Loaded super test intermediate embeddings: {super_test_intermediate_filename} (shape: {super_test_intermediate_df.shape})")
-
-            # Create tensors for toxicity classifier
+    # ==== STEP 2: SUPER TEST ====
+    if len(super_test_df) > 0:
+        super_interm_fn = f"super_test_intermediate_embeddings_{dataset_name}_loop{loop_counter}.parquet"
+        super_interm_path = os.path.join(SUPER_INT_DIR, super_interm_fn)
+        if os.path.exists(super_interm_path):
+            super_test_intermediate_df = pd.read_parquet(super_interm_path)
             super_test_concat_emb, super_test_tox_labels = fd.create_dataset_tensors_toxicity_classifier_134(
-                super_test_intermediate_df, device
-            )
-
-            # Evaluate on super test set
-            tox_classifier.eval()
+                super_test_intermediate_df, device)
             with torch.no_grad():
                 super_test_tox_logits = tox_classifier(super_test_concat_emb).cpu().numpy()
-
-            # Add predictions to DataFrame
-            tox_logits_cols = [f'cond_tox_logit_{j}' for j in range(4)]
             for i, col in enumerate(tox_logits_cols):
                 super_test_intermediate_df[col] = super_test_tox_logits[:, i]
             super_test_intermediate_df['cond_tox_pred_class'] = np.argmax(super_test_tox_logits, axis=1)
-            super_test_intermediate_df['train'] = 0  # All super test samples are not in training set
+            super_test_intermediate_df['train'] = 0 # All super test
 
-            # Add/verify all metadata columns if not already present
-            for col in ['SMILES_spectra', 'index_id', 'Response', 'log_response','tox_level', 'tox_level_0', 'tox_level_1', 'tox_level_2', 'tox_level_3', 'tox_level_4', 'Group', 'CE_clean']:
-                if col in super_test_intermediate_df.columns:
-                    continue
-                if col in super_test_intermediate_df.columns:
-                    super_test_intermediate_df[col] = super_test_intermediate_df[col].values
+            super_final_fn = f"super_test_cond_enc_{dataset_name}_loop{loop_counter}.parquet"
+            super_final_path = os.path.join(SUPER_FINAL_DIR, super_final_fn)
+            super_test_intermediate_df.to_parquet(super_final_path, index=False)
+            print(f"✓ Saved FINAL super test preds: {super_final_fn}")
 
-            # Save super test set predictions
-            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_super_test"
-            os.makedirs(super_test_output_folder, exist_ok=True)
-            super_test_predictions_filename = f"super_test_cond_enc_{bin_part}_{threshold_part}_df_spectra.parquet"
-            super_test_predictions_path = os.path.join(super_test_output_folder, super_test_predictions_filename)
-
-            try:
-                super_test_intermediate_df.to_parquet(super_test_predictions_path, index=False)
-                print(f"✓ Successfully saved super test predictions to {super_test_predictions_filename}")
-            except Exception as save_error:
-                print(f"✗ ERROR saving super test predictions: {str(save_error)}")
-
-            print(f"Super test evaluation completed for {len(super_test_intermediate_df)} samples")
-        else:
-            print(f"No super test intermediate embeddings found at {super_test_intermediate_path}")
-
-        print(f"\nCompleted processing {dataset_name}")
-
-        # # Clear GPU memory after each dataset
-        # del x_train_with_ext, x_val_with_ext, y_train_emb, y_train_morgan, y_train_filtered_morgan
-        # del y_val_emb, y_val_morgan, y_val_filtered_morgan, train_indices_tensor, val_indices_tensor
-        # del train_embeddings_combined, val_embeddings_combined
-        # del train_pred_chemnet, train_pred_morgan, train_pred_filtered_morgan
-        # del val_pred_chemnet, val_pred_morgan, val_pred_filtered_morgan
-        # del train_concat_emb, train_tox_labels, val_concat_emb, val_tox_labels
-        # del x_full_val_with_ext, y_full_val_emb, y_full_val_morgan, y_full_val_filtered_morgan, full_val_indices_tensor
-        # del full_val_embeddings_combined, full_val_pred_chemnet, full_val_pred_morgan, full_val_pred_filtered_morgan
-        # del full_val_concat_emb, full_val_tox_labels
-        # if 'x_super_test_with_ext' in locals():
-        #     del x_super_test_with_ext, y_super_test_emb, y_super_test_morgan, y_super_test_filtered_morgan, super_test_indices_tensor
-        #     del super_test_embeddings_combined, super_test_pred_chemnet, super_test_pred_morgan, super_test_pred_filtered_morgan
-        #     del super_test_concat_emb, super_test_tox_labels
-        # del embedding_model, trained_embedding_model, tox_classifier, trained_tox_classifier
-        # torch.cuda.empty_cache()
-        
-    except Exception as e:
-        print(f"✗ ERROR processing {dataset_name}: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        torch.cuda.empty_cache()
-        continue
-
-print(f"\n{'='*80}")
-print("=== TWO-STEP TRAINING AND EVALUATION COMPLETED ===")
-print(f"{'='*80}")
-print(f"Successfully processed datasets")
+    # ---- CLEANUP GPU memory (optional) ----
+    del x_train_with_ext, x_val_with_ext
+    del y_train_emb, y_train_morgan, y_train_filtered_morgan, train_indices_tensor
+    del y_val_emb, y_val_morgan, y_val_filtered_morgan, val_indices_tensor
+    del train_embeddings_combined, val_embeddings_combined
+    del train_pred_chemnet, train_pred_morgan, train_pred_filtered_morgan
+    del val_pred_chemnet, val_pred_morgan, val_pred_filtered_morgan
+    del train_concat_emb, train_tox_labels, val_concat_emb, val_tox_labels
+    del embedding_model, trained_embedding_model, tox_classifier, trained_tox_classifier
+    torch.cuda.empty_cache()
+print('-'*50)
+print('All loops completed.')

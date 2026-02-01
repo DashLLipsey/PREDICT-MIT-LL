@@ -10,7 +10,7 @@ import functions_enc as f
 import function_depot as fd
 
 ### USER SETTINGS
-dataset_name = 'bin1_thresh0_05_df_spectra'  # must match a file in data dir
+dataset_name = 'bin01_thresh0_5_df_spectra'  # 'bin1_thresh0_05_df_spectra'
 num_loops = 10
 
 VAL_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop"
@@ -60,7 +60,7 @@ def parse_dataset_name(dataset_name):
 num_classes = 5
 num_layers = 8
 batch_size = 256
-epochs = 250
+epochs = 500
 lr = 0.0001
 criterion = CrossEntropyLoss()
 
@@ -84,6 +84,7 @@ for loop_counter in range(num_loops):
 
     dataset = orig_dataset.copy()
     dataset_no_super_test = dataset[~dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
+
     if 'Group' not in dataset_no_super_test.columns:
         dataset_no_super_test['Group'] = dataset_no_super_test['index_id'].map(id_to_group).fillna('Unknown')
     if 'CE_clean' not in dataset_no_super_test.columns:
@@ -201,6 +202,8 @@ for loop_counter in range(num_loops):
         super_test_df['index'] = range(len(super_test_df))
         super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
         super_test_processed = fd.add_tox_levels(super_test_processed)
+        # Ensure super test features match training features
+        super_test_processed = super_test_processed[train_data_processed.columns]
         x_super_test, y_super_test_tox, _ = fd.create_dataset_tensors_direct_toxicity_e1e2(
             super_test_processed, device, start_idx=1, stop_idx=-11)
         with torch.no_grad():
