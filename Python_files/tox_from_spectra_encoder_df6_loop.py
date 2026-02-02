@@ -10,8 +10,8 @@ import functions_enc as f
 import function_depot as fd
 
 ### USER SETTINGS
-dataset_name = 'bin01_thresh0_5_df_spectra'  # 'bin1_thresh0_05_df_spectra'
-num_loops = 10
+dataset_name = 'bin0_1_thresh0_5_df_spectra'  # 'bin1_thresh0_05_df_spectra'
+num_loops = 25
 
 VAL_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop"
 SUPER_DIR = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop_super_test"

@@ -12,9 +12,9 @@ import function_depot as fd
 
 #### ==== USER-SETTINGS: CHOOSE DATASET AND REPEATS ==== ####
 # --- Dataset config (set these!) ---
-bin_size = 1.0  # 1.0 and 0.1     
+bin_size = 0.1  # 1.0 and 0.1     
 threshold = 0.5  # 0.05 and 0.5
-dataset_name = 'bin1_thresh0_5_df_spectra'  # <-- must match parquet file in grid_search_folder
+dataset_name = 'bin0_1_thresh0_5_df_spectra'  # <-- must match parquet file in grid_search_folder
 num_loops = 10       # how many repeated train/val splits & models
 
 # --- Output folders (all must exist or will be made) ---
