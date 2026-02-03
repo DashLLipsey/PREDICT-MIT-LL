@@ -2875,7 +2875,7 @@ def train_model_condenc_1234e1e2_class_iap(model, train_data, val_data, epochs, 
 #     morgan_tensor = torch.Tensor([morgan_df.loc[morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
 #     filtered_morgan_tensor = torch.Tensor([filtered_morgan_df.loc[filtered_morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
 #     spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
-
+#update
 #     return spectra_with_ext_tensor, embeddings_tensor, morgan_tensor, filtered_morgan_tensor, spectra_indices_tensor
 
 def create_dataset_tensors_condenc_134e1e2(
