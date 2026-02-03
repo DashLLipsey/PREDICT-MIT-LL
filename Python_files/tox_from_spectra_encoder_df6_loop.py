@@ -10,8 +10,8 @@ import functions_enc as f
 import function_depot as fd
 
 ### USER SETTINGS
-dataset_name = 'bin0_1_thresh0_5_df_spectra'  # 'bin1_thresh0_05_df_spectra'
-num_loops = 25
+dataset_name = 'bin1_thresh0_05_df_spectra'  # 'bin1_thresh0_05_df_spectra'
+num_loops = 10
 
 VAL_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop"
 SUPER_DIR = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop_super_test"
@@ -60,7 +60,7 @@ def parse_dataset_name(dataset_name):
 num_classes = 5
 num_layers = 8
 batch_size = 256
-epochs = 500
+epochs = 350
 lr = 0.0001
 criterion = CrossEntropyLoss()
 

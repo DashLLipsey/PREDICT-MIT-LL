@@ -2821,63 +2821,6 @@ def train_model_condenc_1234e1e2_class_iap(model, train_data, val_data, epochs, 
 
 # That is accompanied by a model designed to use spectra and external conditions to predict the toxicity
 # classes directly as a way of comparison to quanitfy the effect of the models. 
-# def create_dataset_tensors_condenc_134e1e2(spectra_dataset, embedding_df, morgan_df, filtered_morgan_df, device, start_idx=None, stop_idx=None):
-#     """
-#     Create tensors for the conditional encoder WITH group and collision energy information and filtered Morgan fingerprints,
-#     WITHOUT toxicity classification targets.
-
-#     Parameters:
-#     ----------
-#     spectra_dataset : pd.DataFrame
-#         DataFrame containing spectral data and chemical labels with Group and CE_clean columns.
-#     embedding_df : pd.DataFrame
-#         DataFrame containing ChemNet embeddings for chemicals.
-#     morgan_df : pd.DataFrame
-#         DataFrame containing Morgan fingerprints for chemicals.
-#     filtered_morgan_df : pd.DataFrame
-#         DataFrame containing filtered Morgan fingerprints for chemicals.
-#     device : torch.device
-#         The device (CPU or GPU) on which to store the tensors.
-#     start_idx : int, optional
-#         Start index for spectral columns.
-#     stop_idx : int, optional
-#         Stop index for spectral columns.
-
-#     Returns:
-#     -------
-#     tuple
-#         A tuple containing:
-#         - spectra_with_ext_tensor (torch.Tensor): Tensor of spectral data concatenated with one-hot encoded group and collision energy.
-#         - embeddings_tensor (torch.Tensor): Tensor of true ChemNet embeddings.
-#         - morgan_tensor (torch.Tensor): Tensor of Morgan fingerprints.
-#         - filtered_morgan_tensor (torch.Tensor): Tensor of filtered Morgan fingerprints.
-#         - spectra_indices_tensor (torch.Tensor): Tensor of indices.
-#     """
-    
-#     # Extract spectral data
-#     spectra = spectra_dataset.iloc[:, start_idx:stop_idx]
-    
-#     # One-hot encode the Group column
-#     group_encoded = pd.get_dummies(spectra_dataset['Group'], prefix='group', dtype=int)
-    
-#     # One-hot encode the CE_clean column
-#     ce_encoded = pd.get_dummies(spectra_dataset['CE_clean'], prefix='ce', dtype=int)
-    
-#     # Concatenate spectra with group and collision energy encoding
-#     spectra_with_ext = pd.concat([spectra, group_encoded, ce_encoded], axis=1)
-
-#     # Create chemical labels list
-#     chem_labels = list(spectra_dataset['SMILES_spectra'])
-
-#     # Create tensors for chemical data and labels
-#     spectra_with_ext_tensor = torch.Tensor(spectra_with_ext.values).to(device)
-#     embeddings_tensor = torch.Tensor([embedding_df.loc[embedding_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
-#     morgan_tensor = torch.Tensor([morgan_df.loc[morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
-#     filtered_morgan_tensor = torch.Tensor([filtered_morgan_df.loc[filtered_morgan_df['SMILES_spectra'] == chem_name].iloc[0, 1:].values.astype(float) for chem_name in chem_labels]).to(device)
-#     spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
-#update
-#     return spectra_with_ext_tensor, embeddings_tensor, morgan_tensor, filtered_morgan_tensor, spectra_indices_tensor
-
 def create_dataset_tensors_condenc_134e1e2(
     spectra_dataset, embedding_df, morgan_df, filtered_morgan_df, device, start_idx=None, stop_idx=None,
     all_group_categories=['Q-TOF-positive', 'Q-Orbitrap-positive', 'LTQ-Orbitrap-positive',
