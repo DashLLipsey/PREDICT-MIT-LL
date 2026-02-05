@@ -12,10 +12,10 @@ import function_depot as fd
 
 #### ==== USER-SETTINGS: CHOOSE DATASET AND REPEATS ==== ####
 # --- Dataset config (set these!) ---
-bin_size = 1.0  # 1.0 and 0.1     
+bin_size = 0.1  # 1.0 and 0.1     
 threshold = 0.5  # 0.5 and 0.05
-dataset_name = 'bin1_thresh0_5_df_spectra'  # <-- must match parquet file in grid_search_folder
-num_loops = 10       # how many repeated train/val splits & models
+dataset_name = 'bin0_1_thresh0_5_df_spectra'  # <-- must match parquet file in grid_search_folder
+num_loops = 25       # how many repeated train/val splits & models
 
 # --- Output folders (all must exist or will be made) ---
 VAL_INT_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_intermediate"
@@ -63,17 +63,19 @@ super_test_smiles = [
 #### ==== Model params (as your original script) ==== ####
 embedding_num_layers = 4
 embedding_batch_size = 512
-embedding_epochs = 500
+embedding_epochs = 400
 embedding_lr = 0.0001
 lambda1 = 5
 lambda3 = 10
 lambda4 = 15
+dropout1 = 0.35
 
-tox_num_layers = 8
+tox_num_layers = 4
 tox_batch_size = 256
 tox_epochs = 250
 tox_lr = 0.0001
 tox_num_classes = 5
+dropout2 = 0.35
 criterion1 = nn.MSELoss()
 criterion3 = nn.MSELoss()
 criterion4 = nn.MSELoss()
@@ -141,7 +143,7 @@ for loop_counter in range(num_loops):
 
     actual_input_size = x_train_with_ext.shape[1]
     embedding_model = fd.Cond_Encoder_134_dropout(input_size=actual_input_size, output_size=embedding_output_size,
-                                                  num_layers=embedding_num_layers, dropout_rate=0.2).to(device)
+                                                  num_layers=embedding_num_layers, dropout_rate=dropout1).to(device)
 
     train_loader_emb = DataLoader(TensorDataset(x_train_with_ext, y_train_emb, y_train_morgan, y_train_filtered_morgan, train_indices_tensor),
                                   batch_size=embedding_batch_size, shuffle=True, pin_memory=False, num_workers=0)
@@ -285,7 +287,7 @@ for loop_counter in range(num_loops):
     val_concat_emb, val_tox_labels = fd.create_dataset_tensors_toxicity_classifier_134(
         val_intermediate_df, device)
 
-    tox_classifier = fd.ToxicityClassifier_134(num_layers=tox_num_layers, num_classes=tox_num_classes, dropout_rate=0.2).to(device)
+    tox_classifier = fd.ToxicityClassifier_134(num_layers=tox_num_layers, num_classes=tox_num_classes, dropout_rate=dropout2).to(device)
     train_loader_tox = DataLoader(TensorDataset(train_concat_emb, train_tox_labels),
                              batch_size=tox_batch_size, shuffle=True, pin_memory=False, num_workers=0)
     val_loader_tox = DataLoader(TensorDataset(val_concat_emb, val_tox_labels),
