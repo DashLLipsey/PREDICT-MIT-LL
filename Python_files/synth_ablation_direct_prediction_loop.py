@@ -10,7 +10,7 @@ import functions_enc as f
 import function_depot as fd
 
 ### USER SETTINGS
-dataset_name = 'bin0_1_thresh0_05_df_spectra'  # 'bin1_thresh0_05_df_spectra'
+dataset_name = 'bin1_thresh0_05_df_spectra'  # 'bin1_thresh0_05_df_spectra'
 num_loops = 25
 
 VAL_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_synth_abl_loop"
@@ -112,14 +112,17 @@ for loop_counter in range(num_loops):
     train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
     test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
     train_indices_set = set(train_indices)
-    train_data['index'] = range(len(train_data))
-    test_data['index'] = range(len(test_data))
 
-    # Preprocess, etc
+    # Keep original index_id - DO NOT overwrite!
     train_data_processed = fd.add_response_and_log_response(train_data.copy(), df6_subset, smiles_col='SMILES_spectra')
     train_data_processed = fd.add_tox_levels(train_data_processed)
+    # Add 'index' column for the tensor function, but use index_id values
+    train_data_processed['index'] = train_data_processed['index_id']
+    
     test_data_processed = fd.add_response_and_log_response(test_data.copy(), df6_subset, smiles_col='SMILES_spectra')
     test_data_processed = fd.add_tox_levels(test_data_processed)
+    # Add 'index' column for the tensor function, but use index_id values
+    test_data_processed['index'] = test_data_processed['index_id']
 
     x_train, y_train_tox, train_indices_tensor = fd.create_dataset_tensors_direct_toxicity_e1e2(
         train_data_processed, device, start_idx=1, stop_idx=-11)
@@ -171,10 +174,12 @@ for loop_counter in range(num_loops):
     filtered_dataset_full = filtered_dataset.copy()
     train_indicator_map = {idx: 1 if idx in train_indices_set else 0 for idx in filtered_dataset_full.index}
     filtered_dataset_full = filtered_dataset_full.reset_index(drop=False, names=['original_index'])
-    filtered_dataset_full['index'] = range(len(filtered_dataset_full))
+    # Keep original index_id - DO NOT overwrite!
     filtered_dataset_full_processed = fd.add_response_and_log_response(filtered_dataset_full.copy(), df6_subset, smiles_col='SMILES_spectra')
     filtered_dataset_full_processed = fd.add_tox_levels(filtered_dataset_full_processed)
     filtered_dataset_full_processed['train'] = filtered_dataset_full_processed['original_index'].map(train_indicator_map).fillna(0).astype(int)
+    # Add 'index' column for tensor function using index_id
+    filtered_dataset_full_processed['index'] = filtered_dataset_full_processed['index_id']
     filtered_dataset_for_tensors = filtered_dataset_full_processed.drop(columns=['original_index', 'train']).copy()
     x_full_val, y_full_val_tox, full_val_indices_tensor = fd.create_dataset_tensors_direct_toxicity_e1e2(
         filtered_dataset_for_tensors, device, start_idx=1, stop_idx=-11)
@@ -188,7 +193,7 @@ for loop_counter in range(num_loops):
     full_val_output_df['SMILES_spectra'] = filtered_dataset_full_processed['SMILES_spectra'].values
     full_val_output_df['Response'] = filtered_dataset_full_processed['Response'].values
     full_val_output_df['log_response'] = filtered_dataset_full_processed['log_response'].values
-    full_val_output_df['index_id'] = filtered_dataset_full_processed['index'].values
+    full_val_output_df['index_id'] = filtered_dataset_full_processed['index_id'].values  # Keep original index_id!
     full_val_output_df['train'] = filtered_dataset_full_processed['train'].values
 
     # SAVE MAIN VALIDATION OUT
@@ -210,7 +215,7 @@ for loop_counter in range(num_loops):
             super_test_df['Group'] = super_test_df['index_id'].map(id_to_group).fillna('Unknown')
         if 'CE_clean' not in super_test_df.columns:
             super_test_df['CE_clean'] = super_test_df['index_id'].map(id_to_ce_clean).fillna('Unknown')
-        super_test_df['index'] = range(len(super_test_df))
+        # Keep original index_id - DO NOT overwrite
         super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
         super_test_processed = fd.add_tox_levels(super_test_processed)
 
@@ -225,6 +230,8 @@ for loop_counter in range(num_loops):
         for col in train_ce_cols:
             if col not in super_test_processed.columns:
                 super_test_processed[col] = 0
+        # Add 'index' column for the tensor function, but use index_id values
+        super_test_processed['index'] = super_test_processed['index_id']
         # Ensure column order matches
         super_test_processed = super_test_processed[train_data_processed.columns]
         x_super_test, y_super_test_tox, _ = fd.create_dataset_tensors_direct_toxicity_e1e2(
@@ -237,7 +244,7 @@ for loop_counter in range(num_loops):
         super_test_output_df['SMILES_spectra'] = super_test_processed['SMILES_spectra'].values
         super_test_output_df['Response'] = super_test_processed['Response'].values
         super_test_output_df['log_response'] = super_test_processed['log_response'].values
-        super_test_output_df['index_id'] = super_test_processed['index'].values
+        super_test_output_df['index_id'] = super_test_processed['index_id'].values  # Keep original index_id!
         super_test_output_df['train'] = 0
         super_fn = f"super_test_direct_tox_{dataset_name}_loop{loop_counter}.parquet"
         super_path = os.path.join(SUPER_DIR, super_fn)

@@ -12,9 +12,9 @@ import function_depot as fd
 
 #### ==== USER-SETTINGS: CHOOSE DATASET AND REPEATS ==== ####
 # --- Dataset config (set these!) ---
-bin_size = 0.1  # 1.0 and 0.1     
-threshold = 0.5  # 0.5 and 0.05
-dataset_name = 'bin0_1_thresh0_5_df_spectra'  # <-- must match parquet file in grid_search_folder
+bin_size = 1.0  # 1.0 and 0.1     
+threshold = 0.05  # 0.5 and 0.05
+dataset_name = 'bin1_thresh0_05_df_spectra'  # <-- must match parquet file in grid_search_folder
 num_loops = 25       # how many repeated train/val splits & models
 
 # --- Output folders (all must exist or will be made) ---
@@ -62,7 +62,7 @@ super_test_smiles = [
 
 #### ==== Model params (as your original script) ==== ####
 embedding_num_layers = 4
-embedding_batch_size = 512
+embedding_batch_size = 128
 embedding_epochs = 400
 embedding_lr = 0.0001
 lambda1 = 5
@@ -71,7 +71,7 @@ lambda4 = 15
 dropout1 = 0.35
 
 tox_num_layers = 4
-tox_batch_size = 256
+tox_batch_size = 128
 tox_epochs = 250
 tox_lr = 0.0001
 tox_num_classes = 5
@@ -128,12 +128,17 @@ for loop_counter in range(num_loops):
     train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
     test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
 
-    train_data['index'] = range(len(train_data))
-    test_data['index'] = range(len(test_data))
+    # Keep original index_id, add temp_index only for internal processing if needed
+    # DO NOT overwrite index_id - it tracks specific spectra across the pipeline
     train_data_processed = fd.add_response_and_log_response(train_data.copy(), df6_subset, smiles_col='SMILES_spectra')
     train_data_processed = fd.add_tox_levels(train_data_processed)
+    # Add 'index' column for the tensor function, but use index_id values
+    train_data_processed['index'] = train_data_processed['index_id']
+    
     test_data_processed = fd.add_response_and_log_response(test_data.copy(), df6_subset, smiles_col='SMILES_spectra')
     test_data_processed = fd.add_tox_levels(test_data_processed)
+    # Add 'index' column for the tensor function, but use index_id values
+    test_data_processed['index'] = test_data_processed['index_id']
 
     # ==== STEP 1: EMBEDDING ====
     x_train_with_ext, y_train_emb, y_train_morgan, y_train_filtered_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_134e1e2(
@@ -211,7 +216,7 @@ for loop_counter in range(num_loops):
 
     combined_processed = pd.concat([train_data_processed, test_data_processed], axis=0).reset_index(drop=True)
     intermediate_df['SMILES_spectra'] = combined_processed['SMILES_spectra'].values
-    intermediate_df['index_id'] = combined_processed['index'].values
+    intermediate_df['index_id'] = combined_processed['index_id'].values  # Keep original index_id!
     intermediate_df['Response'] = combined_processed['Response'].values
     intermediate_df['log_response'] = combined_processed['log_response'].values
     if 'tox_level' in combined_processed.columns:
@@ -240,9 +245,11 @@ for loop_counter in range(num_loops):
         if 'CE_clean' not in super_test_df.columns:
             super_test_df['CE_clean'] = super_test_df['index_id'].map(id_to_ce_clean).fillna('Unknown')
 
-        super_test_df['index'] = range(len(super_test_df))
+        # Keep original index_id - DO NOT overwrite
         super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
         super_test_processed = fd.add_tox_levels(super_test_processed)
+        # Add 'index' column for the tensor function, but use index_id values
+        super_test_processed['index'] = super_test_processed['index_id']
 
         # Ensure super test processed columns match train_data_processed columns
         super_test_processed = super_test_processed[train_data_processed.columns]
@@ -259,7 +266,7 @@ for loop_counter in range(num_loops):
         super_test_emb_df = pd.concat([super_test_emb_df, pd.DataFrame(super_test_pred_morgan.numpy(), columns=morgan_cols)], axis=1)
         super_test_emb_df = pd.concat([super_test_emb_df, pd.DataFrame(super_test_pred_filtered_morgan.numpy(), columns=filtered_morgan_cols)], axis=1)
         super_test_emb_df['SMILES_spectra'] = super_test_processed['SMILES_spectra'].values
-        super_test_emb_df['index_id'] = super_test_processed['index'].values
+        super_test_emb_df['index_id'] = super_test_processed['index_id'].values  # Keep original index_id!
         super_test_emb_df['Response'] = super_test_processed['Response'].values
         super_test_emb_df['log_response'] = super_test_processed['log_response'].values
         if 'tox_level' in super_test_processed.columns:
