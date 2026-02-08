@@ -15,7 +15,7 @@ import function_depot as fd
 bin_size = 1.0  # 1.0 and 0.1     
 threshold = 0.05  # 0.05 and 0.5
 dataset_name = 'bin1_thresh0_05_df_spectra'  # <-- must match parquet file in grid_search_folder
-num_loops = 10      # how many repeated train/val splits & models
+num_loops = 3      # how many repeated train/val splits & models
 
 # --- Output folders ---
 VAL_INT_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_cond_enc_134_loop_intermediate"
@@ -75,12 +75,18 @@ lambda3 = 10
 lambda4 = 15
 dropout1 = 0.2
 
+input_length=4608
 tox_num_layers = 4
 tox_batch_size = 128
 tox_epochs = 250
 tox_lr = 0.0001
 tox_num_classes = 5
-dropout2 = 0.35
+dropout2 = 0.2
+
+layer1_size = 32
+layer2_size = 250
+layer3_size = 250
+
 criterion1 = nn.MSELoss()
 criterion3 = nn.MSELoss()
 criterion4 = nn.MSELoss()
@@ -313,6 +319,25 @@ for loop_counter in range(num_loops):
     tox_classifier = fd.ToxicityClassifier_134(num_layers=tox_num_layers, 
                                                num_classes=tox_num_classes, 
                                                dropout_rate=dropout2).to(device)
+    
+    # tox_classifier = fd.ToxicityClassifier_134_2(num_classes=tox_num_classes,
+    #                                              input_length=4608,
+    #                                              dropout_rate=dropout2,
+    #                                              layer1_size=layer1_size).to(device)
+
+    # tox_classifier = fd.ToxicityClassifier_134_3(num_classes=tox_num_classes,
+    #                                              input_length=4608,
+    #                                              dropout_rate=dropout2,
+    #                                              layer1_size=layer1_size,
+    #                                              layer2_size=layer2_size).to(device)
+    
+    # tox_classifier = fd.ToxicityClassifier_134_4(num_classes=tox_num_classes,
+    #                                              input_length=4608,
+    #                                              dropout_rate=dropout2,
+    #                                              layer1_size=layer1_size,
+    #                                              layer2_size=layer2_size,
+    #                                              layer3_size=layer3_size).to(device)
+    
     train_loader_tox = DataLoader(TensorDataset(train_concat_emb, train_tox_labels),
                              batch_size=tox_batch_size, shuffle=True, pin_memory=False, num_workers=0)
     val_loader_tox = DataLoader(TensorDataset(val_concat_emb, val_tox_labels),
@@ -398,58 +423,3 @@ for loop_counter in range(num_loops):
     torch.cuda.empty_cache()
 print('-'*50)
 print('All loops completed.')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

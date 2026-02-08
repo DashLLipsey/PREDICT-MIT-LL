@@ -483,7 +483,7 @@ def train_model_condenc_123(model, train_data, val_data, epochs, learning_rate, 
             weighted_loss2 = lambda2 * loss2
             weighted_loss3 = lambda3 * loss3
             
-            # Total loss with modular weights
+            # Total loss with modular weights (group is NOT included in loss)
             total_loss = weighted_loss1 + weighted_loss2 + weighted_loss3
 
             total_loss.backward()
@@ -522,7 +522,7 @@ def train_model_condenc_123(model, train_data, val_data, epochs, learning_rate, 
                 val_batch_predicted_tox = val_batch_predicted[:, 512:513]
                 val_batch_predicted_morgan = val_batch_predicted[:, 513:]
 
-                # Calculate individual losses
+                # Calculate individual losses (group is NOT included in loss calculation)
                 val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
                 val_loss2 = criterion2(val_batch_predicted_tox, val_true_tox)
                 val_loss3 = criterion3(val_batch_predicted_morgan, val_true_morgan)
@@ -1042,7 +1042,7 @@ def train_model_condenc_1234e1e2_weightloss(model, train_data, val_data, epochs,
             loss3 = criterion3(batch_predicted_morgan, true_morgan)  # loss3 (morgan loss)
 
             # Filtered Morgan Loss
-            batch_predicted_filtered_morgan = batch_predicted_combined[:, 513 + 2048:]  # Remaining columns
+            batch_predicted_filtered_morgan = batch_predicted_combined[:, 513+2048:]  # Remaining columns
             loss4 = criterion4(batch_predicted_filtered_morgan, true_filtered_morgan)  # loss4 (filtered morgan loss)
 
             # Apply lambda weighting
@@ -1081,9 +1081,11 @@ def train_model_condenc_1234e1e2_weightloss(model, train_data, val_data, epochs,
         # Validation Mode
         model.eval()
         val_loss = 0.0
-        val_embedding_loss, val_toxicity_loss = 0.0, 0.0
-        val_morgan_loss, val_filtered_morgan_loss = 0.0, 0.0
-
+        val_embedding_loss = 0.0
+        val_toxicity_loss = 0.0
+        val_morgan_loss = 0.0
+        val_filtered_morgan_loss = 0.0
+        
         with torch.no_grad():
             for val_batch_with_ext, val_true_embeddings, val_true_tox, val_true_morgan, val_true_filtered_morgan, _ in val_data:
                 val_batch_with_ext = val_batch_with_ext.to(device)
@@ -1095,8 +1097,8 @@ def train_model_condenc_1234e1e2_weightloss(model, train_data, val_data, epochs,
                 val_batch_predicted = model(val_batch_with_ext)
                 val_batch_predicted_embeddings = val_batch_predicted[:, :512]
                 val_batch_predicted_tox = val_batch_predicted[:, 512:513]
-                val_batch_predicted_morgan = val_batch_predicted[:, 513:513 + 2048]
-                val_batch_predicted_filtered_morgan = val_batch_predicted[:, 513 + 2048:]
+                val_batch_predicted_morgan = val_batch_predicted[:, 513:513+2048]
+                val_batch_predicted_filtered_morgan = val_batch_predicted[:, 513+2048:]
 
                 # Calculate individual validation losses
                 val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
@@ -1467,11 +1469,6 @@ def create_dataset_tensors_condenc_123e1e2(spectra_dataset, embedding_df, morgan
     # One-hot encode the CE_clean column
     ce_encoded = pd.get_dummies(spectra_dataset['CE_clean'], prefix='ce', dtype=int)
     
-    # Alternative: Numerical encoding for CE_clean (commented out)
-    # ce_mapping = {'NAN': 0, 'low': 5, 'med': 10, 'high': 15}
-    # ce_numerical = spectra_dataset['CE_clean'].map(ce_mapping).values.reshape(-1, 1)
-    # ce_encoded = pd.DataFrame(ce_numerical, columns=['ce_numerical'], index=spectra_dataset.index)
-
     # Concatenate spectra with group and collision energy encoding
     spectra_with_ext = pd.concat([spectra, group_encoded, ce_encoded], axis=1)
    
@@ -1575,11 +1572,6 @@ def create_dataset_tensors_condenc_1234e1e2(spectra_dataset, embedding_df, morga
     # One-hot encode the CE_clean column
     ce_encoded = pd.get_dummies(spectra_dataset['CE_clean'], prefix='ce', dtype=int)
     
-    # Alternative: Numerical encoding for CE_clean (commented out)
-    # ce_mapping = {'NAN': 0, 'low': 5, 'med': 10, 'high': 15}
-    # ce_numerical = spectra_dataset['CE_clean'].map(ce_mapping).values.reshape(-1, 1)
-    # ce_encoded = pd.DataFrame(ce_numerical, columns=['ce_numerical'], index=spectra_dataset.index)
-
     # Concatenate spectra with group and collision energy encoding
     spectra_with_ext = pd.concat([spectra, group_encoded, ce_encoded], axis=1)
    
@@ -2346,7 +2338,7 @@ def create_dataset_tensors_condenc_1234e1e2_class(spectra_dataset, embedding_df,
         # Case 2: tox levels are stored in a single column with values 1, 2, 3, 4
         tox_class_indices = torch.Tensor(spectra_dataset['tox_level'].values - 1).long().to(device)  # Convert to 0-based index
     else:
-        raise ValueError("The input DataFrame must contain either one-hot columns 'tox_level1' to 'tox_level4' or a single 'tox_level' column.")
+        raise ValueError("The input DataFrame must contain either one-hot columns 'tox_level_1' to 'tox_level_4' or a single 'tox_level' column.")
 
     return spectra_with_ext_tensor, embeddings_tensor, tox_class_indices, morgan_tensor, filtered_morgan_tensor, spectra_indices_tensor
 
@@ -3099,27 +3091,10 @@ def train_model_condenc_134e1e2(model, train_data, val_data, epochs, learning_ra
 # Here is the model deisgned to take emdebbings and predict toxicity from them
 class ToxicityClassifier_134(nn.Module):
     def __init__(self, num_layers, num_classes=5, dropout_rate=0.2):
-        """
-        Toxicity classifier that takes concatenated embeddings as input.
-        
-        Parameters:
-        -----------
-        num_layers : int
-            Number of hidden layers in the classifier
-        num_classes : int
-            Number of toxicity classes (default: 4 for tox levels 1-4)
-        dropout_rate : float
-            Dropout rate for regularization (default: 0.3)
-        """
         super().__init__()
-        
-        # Input size: 512 (ChemNet) + 2048 (Morgan) + filtered_morgan_size
-        # Assuming filtered Morgan is also 2048, total = 4608
         input_size = 512 + 2048 + 2048
-        
         layers = []
         layer_sizes = np.linspace(input_size, num_classes, num_layers + 1, dtype=int)
-        
         for i in range(num_layers):
             layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
             if i < num_layers - 1:  # Don't add activation/dropout after last layer
@@ -3129,22 +3104,62 @@ class ToxicityClassifier_134(nn.Module):
         self.classifier = nn.Sequential(*layers)
 
     def forward(self, x):
-        """
-        Forward pass through the classifier.
-        
-        Parameters:
-        -----------
-        x : torch.Tensor
-            Concatenated embeddings [batch_size, 4608]
-            Format: [ChemNet (512) | Morgan (2048) | Filtered Morgan (2048)]
-        
-        Returns:
-        --------
-        torch.Tensor
-            Logits for toxicity classification [batch_size, num_classes]
-        """
         logits = self.classifier(x)
         return logits
+
+import torch
+import torch.nn as nn
+
+# Two-layer version
+class ToxicityClassifier_134_2(nn.Module):
+    def __init__(self, input_length=4608, num_classes=5, dropout_rate=0.2, layer1_size=16):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(input_length, layer1_size),      # Layer 1: input_length -> layer1_size
+            nn.LeakyReLU(inplace=True),
+            nn.Dropout(dropout_rate),
+            nn.Linear(layer1_size, num_classes)      # Layer 2: layer1_size -> num_classes
+        )
+    def forward(self, x, *args):
+        # Accepts optional dummy argument for compatibility with DataLoader yielding three items
+        return self.encoder(x)
+
+# Three-layer version 
+class ToxicityClassifier_134_3(nn.Module):
+    def __init__(self, input_length=4608, num_classes=5, dropout_rate=0.2, layer1_size=32, layer2_size=16):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(input_length, layer1_size),      # Layer 1: input_length -> layer1_size
+            nn.LeakyReLU(inplace=True),
+            nn.Dropout(dropout_rate),
+            nn.Linear(layer1_size, layer2_size),     # Layer 2: layer1_size -> layer2_size
+            nn.LeakyReLU(inplace=True),
+            nn.Dropout(dropout_rate),
+            nn.Linear(layer2_size, num_classes)      # Layer 3: layer2_size -> num_classes
+        )
+    def forward(self, x, *args):
+        # Accepts optional dummy argument for compatibility with DataLoader yielding three items
+        return self.encoder(x)
+
+# Four-layer version 
+class ToxicityClassifier_134_4(nn.Module):
+    def __init__(self, input_length=4608, num_classes=5, dropout_rate=0.2, layer1_size=2000, layer2_size=500, layer3_size=250):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(input_length, layer1_size),    # Layer 1: input_length -> layer1_size
+            nn.LeakyReLU(inplace=True),
+            nn.Dropout(dropout_rate),
+            nn.Linear(layer1_size, layer2_size),     # Layer 2: layer1_size -> layer2_size
+            nn.LeakyReLU(inplace=True),
+            nn.Dropout(dropout_rate),
+            nn.Linear(layer2_size, layer3_size),     # Layer 3: layer2_size -> layer3_size
+            nn.LeakyReLU(inplace=True),
+            nn.Dropout(dropout_rate),
+            nn.Linear(layer3_size, num_classes)      # Layer 4: layer3_size -> num_classes
+        )
+    def forward(self, x, *args):
+        # Accepts optional dummy argument for compatibility with DataLoader yielding three items
+        return self.encoder(x)
 
 def create_dataset_tensors_toxicity_classifier_134(embeddings_df, device):
     """
@@ -3338,53 +3353,70 @@ def train_toxicity_classifier_134(model, train_data, val_data, epochs, learning_
 
 ### ============================ DIRECT TOXICITY PREDICTION FROM SPECTRA ============================== ###
 # This model uses spectra + conditions to predict toxicity directly
+# Default, even linearly spaces architecture
 class Direct_Toxicity_Encoder(nn.Module):
     def __init__(self, input_size, num_classes=5, num_layers=5, dropout_rate=0.3):
-        """
-        Direct toxicity prediction encoder that takes spectra + conditions as input.
-        
-        Parameters:
-        -----------
-        input_size : int
-            Size of input (spectra + one-hot encoded group + one-hot encoded CE_clean)
-        num_classes : int
-            Number of toxicity classes (default: 5 for tox levels 0-4)
-        num_layers : int
-            Number of layers in the network
-        dropout_rate : float
-            Dropout rate for regularization (default: 0.3)
-        """
         super().__init__()
-        
         layers = []
         layer_sizes = np.linspace(input_size, num_classes, num_layers + 1, dtype=int)
-        
         for i in range(num_layers):
             layers.append(nn.Linear(layer_sizes[i], layer_sizes[i+1]))
             if i < num_layers - 1:  # Don't add activation/dropout after last layer
                 layers.append(nn.LeakyReLU(inplace=True))
                 layers.append(nn.Dropout(dropout_rate))
-        
         self.encoder = nn.Sequential(*layers)
-
     def forward(self, x):
-        """
-        Forward pass through the encoder.
-        
-        Parameters:
-        -----------
-        x : torch.Tensor
-            Input tensor [batch_size, input_size]
-            Format: [spectra | one-hot Group | one-hot CE_clean]
-        
-        Returns:
-        --------
-        torch.Tensor
-            Logits for toxicity classification [batch_size, num_classes]
-        """
         logits = self.encoder(x)
         return logits
 
+class Direct_Toxicity_Encoder_custom2(nn.Module):
+    def __init__(self, input_size=1500, num_classes=5, dropout_rate=0.2, layer_size=16):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(input_size, layer_size),      # Layer 1: 1500 -> 16
+            nn.LeakyReLU(inplace=True),
+            nn.Dropout(dropout_rate),
+            nn.Linear(layer_size, num_classes)      # Layer 2: 16 -> 5
+        )
+    def forward(self, x):
+        logits = self.encoder(x)
+        return logits
+    
+class Direct_Toxicity_Encoder_custom3(nn.Module):
+    def __init__(self, input_size=1500, num_classes=5, dropout_rate=0.3, layer1_size=32, layer2_size=16):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(input_size, layer1_size),      # Layer 1: 1500 -> 32
+            nn.LeakyReLU(inplace=True),
+            nn.Dropout(dropout_rate),
+            nn.Linear(layer1_size, layer2_size),              # Layer 2: 32 -> 16
+            nn.LeakyReLU(inplace=True),
+            nn.Dropout(dropout_rate),
+            nn.Linear(layer2_size, num_classes)      # Layer 3: 16 -> 5
+        )
+        
+    def forward(self, x):
+        logits = self.encoder(x)
+        return logits
+
+class Direct_Toxicity_Encoder_custom4(nn.Module):
+    def __init__(self, input_size=1500, num_classes=5, dropout_rate=0.3, layer1_size=32, layer2_size=16, layer3_size=8):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(input_size, layer1_size),      # Layer 1: 1500 -> 32
+            nn.LeakyReLU(inplace=True),
+            nn.Dropout(dropout_rate),
+            nn.Linear(layer1_size, layer2_size),     # Layer 2: 32 -> 16
+            nn.LeakyReLU(inplace=True),
+            nn.Dropout(dropout_rate),
+            nn.Linear(layer2_size, layer3_size),      # Layer 3: 16 -> 8
+            nn.LeakyReLU(inplace=True),
+            nn.Dropout(dropout_rate),
+            nn.Linear(layer3_size, num_classes)      # Layer 4: 8 -> 5
+      )        
+    def forward(self, x):
+        logits = self.encoder(x)
+        return logits
 # # This creates the tensors needed for direct toxicity prediction from spectra + conditions
 # def create_dataset_tensors_direct_toxicity_e1e2(spectra_dataset, device, start_idx=None, stop_idx=None):
 #     """

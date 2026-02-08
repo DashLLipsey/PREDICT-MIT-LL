@@ -11,7 +11,7 @@ import function_depot as fd
 
 ### USER SETTINGS
 dataset_name = 'bin1_thresh0_05_df_spectra'  # 'bin1_thresh0_05_df_spectra'
-num_loops = 25
+num_loops = 5
 
 VAL_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop"
 SUPER_DIR = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop_super_test"
@@ -62,6 +62,10 @@ num_layers = 8
 batch_size = 256
 epochs = 350
 lr = 0.0001
+dropout = 0.2
+layer1_size = 32
+layer2_size = 250
+layer3_size = 50
 criterion = CrossEntropyLoss()
 
 print("=== DIRECT TOXICITY PREDICTION (Repeat Loops) ===")
@@ -146,12 +150,37 @@ for loop_counter in range(num_loops):
     x_val, y_val_tox, val_indices_tensor = fd.create_dataset_tensors_direct_toxicity_e1e2(
         test_data_processed, device, start_idx=1, stop_idx=-11)
     actual_input_size = x_train.shape[1]
-    direct_tox_model = fd.Direct_Toxicity_Encoder(
+    # direct_tox_model = fd.Direct_Toxicity_Encoder(
+    #         input_size=actual_input_size,
+    #         num_classes=num_classes,
+    #         num_layers=num_layers,
+    #         dropout_rate=dropout
+    # ).to(device)
+
+    # direct_tox_model = fd.Direct_Toxicity_Encoder_custom2(
+    #         input_size=actual_input_size,
+    #         num_classes=num_classes,
+    #         dropout_rate=dropout,
+    #         layer_size=layer1_size,
+    # ).to(device)
+
+    direct_tox_model = fd.Direct_Toxicity_Encoder_custom3(
             input_size=actual_input_size,
             num_classes=num_classes,
-            num_layers=num_layers,
-            dropout_rate=0.2
+            dropout_rate=dropout,
+            layer1_size=layer1_size,
+            layer2_size=layer2_size
     ).to(device)
+
+    # direct_tox_model = fd.Direct_Toxicity_Encoder_custom4(
+    #         input_size=actual_input_size,
+    #         num_classes=num_classes,
+    #         dropout_rate=dropout,
+    #         layer1_size=layer1_size,
+    #         layer2_size=layer2_size,
+    #         layer3_size=layer3_size
+    # ).to(device)
+
     train_loader = DataLoader(TensorDataset(x_train, y_train_tox, train_indices_tensor),
                               batch_size=batch_size, shuffle=True, pin_memory=False, num_workers=0)
     val_loader = DataLoader(TensorDataset(x_val, y_val_tox, val_indices_tensor),
@@ -165,7 +194,7 @@ for loop_counter in range(num_loops):
         'model_type': "Direct Toxicity Prediction (Spectra + Group + CE_clean -> Toxicity)",
         'batch_size': batch_size,
         'num_classes': num_classes,
-        'num_layers': num_layers,
+        # 'num_layers': num_layers,
         'learning_rate': lr,
         'epochs': epochs,
         'Bin': bin_size,
