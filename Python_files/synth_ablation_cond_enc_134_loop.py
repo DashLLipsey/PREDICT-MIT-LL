@@ -15,7 +15,7 @@ import function_depot as fd
 bin_size = 1.0  # 1.0 and 0.1     
 threshold = 0.05  # 0.5 and 0.05
 dataset_name = 'bin1_thresh0_05_df_spectra'  # <-- must match parquet file in grid_search_folder
-num_loops = 3       # how many repeated train/val splits & models
+num_loops = 8       # how many repeated train/val splits & models
 
 # --- Output folders (all must exist or will be made) ---
 VAL_INT_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_intermediate"
@@ -61,7 +61,7 @@ super_test_smiles = [
 ]
 
 #### ==== Model params ==== ####
-embedding_num_layers = 4
+embedding_num_layers = 6
 embedding_batch_size = 128
 embedding_epochs = 300
 embedding_lr = 0.0001
@@ -78,7 +78,7 @@ tox_lr = 0.0001
 tox_num_classes = 5
 dropout2 = 0.2
 
-layer1_size = 32
+layer1_size = 1000
 layer2_size = 250
 layer3_size = 250
 

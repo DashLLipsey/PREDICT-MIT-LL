@@ -58,7 +58,7 @@ def parse_dataset_name(dataset_name):
     return bin_size, threshold
 
 num_classes = 5
-num_layers = 8
+num_layers = 1
 batch_size = 256
 epochs = 350
 lr = 0.0001
@@ -134,12 +134,12 @@ for loop_counter in range(num_loops):
     x_val, y_val_tox, val_indices_tensor = fd.create_dataset_tensors_direct_toxicity_e1e2(
         test_data_processed, device, start_idx=1, stop_idx=-11)
     actual_input_size = x_train.shape[1]
-    # direct_tox_model = fd.Direct_Toxicity_Encoder(
-    #         input_size=actual_input_size,
-    #         num_classes=num_classes,
-    #         num_layers=num_layers,
-    #         dropout_rate=dropout
-    # ).to(device)
+    direct_tox_model = fd.Direct_Toxicity_Encoder(
+            input_size=actual_input_size,
+            num_classes=num_classes,
+            num_layers=num_layers,
+            dropout_rate=dropout
+    ).to(device)
 
     # direct_tox_model = fd.Direct_Toxicity_Encoder_custom2(
     #         input_size=actual_input_size,
@@ -148,13 +148,13 @@ for loop_counter in range(num_loops):
     #         layer_size=layer1_size,
     # ).to(device)
 
-    direct_tox_model = fd.Direct_Toxicity_Encoder_custom3(
-            input_size=actual_input_size,
-            num_classes=num_classes,
-            dropout_rate=dropout,
-            layer1_size=layer1_size,
-            layer2_size=layer2_size
-    ).to(device)
+    # direct_tox_model = fd.Direct_Toxicity_Encoder_custom3(
+    #         input_size=actual_input_size,
+    #         num_classes=num_classes,
+    #         dropout_rate=dropout,
+    #         layer1_size=layer1_size,
+    #         layer2_size=layer2_size
+    # ).to(device)
 
     # direct_tox_model = fd.Direct_Toxicity_Encoder_custom4(
     #         input_size=actual_input_size,
@@ -179,7 +179,7 @@ for loop_counter in range(num_loops):
         'model_type': "Direct Toxicity Prediction (Spectra + Group + CE_clean -> Toxicity)",
         'batch_size': batch_size,
         'num_classes': num_classes,
-        # 'num_layers': num_layers,
+        'num_layers': num_layers,
         'learning_rate': lr,
         'epochs': epochs,
         'Bin': bin_size,
