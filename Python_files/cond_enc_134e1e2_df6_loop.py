@@ -15,7 +15,7 @@ import function_depot as fd
 bin_size = 1.0  # 1.0 and 0.1     
 threshold = 0.05  # 0.05 and 0.5
 dataset_name = 'bin1_thresh0_05_df_spectra'  # <-- must match parquet file in grid_search_folder
-num_loops = 8      # how many repeated train/val splits & models
+num_loops = 25      # how many repeated train/val splits & models
 
 # --- Output folders ---
 VAL_INT_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_cond_enc_134_loop_intermediate"
@@ -66,14 +66,14 @@ super_test_smiles = [
 ]
 
 #### ==== Model params ==== ####
-embedding_num_layers = 6
+embedding_num_layers = 4
 embedding_batch_size = 128
 embedding_epochs = 300
 embedding_lr = 0.0001
-lambda1 = 5
+lambda1 = 15
 lambda3 = 10
 lambda4 = 15
-dropout1 = 0.2
+dropout1 = 0.35
 
 input_length=4608
 tox_num_layers = 4
@@ -108,22 +108,19 @@ id_to_synthetic = dict(zip(df6_spectra['index_id'], df6_spectra['synthetic'].fil
 # Map SMILES_spectra -> index_id in the major dataset (for filtering super test below)
 orig_dataset = pd.read_parquet(dataset_path)
 orig_dataset = pd.DataFrame(orig_dataset) if not isinstance(orig_dataset, pd.DataFrame) else orig_dataset
-smiles_to_index = dict(zip(orig_dataset['SMILES_spectra'], orig_dataset['index_id']))
 
-# --- Remove synthetic spectra from super test ---
+# --- Identify synthetic spectra (individual index_ids) ---
 synthetic_index_ids = set([idx for idx, syn in id_to_synthetic.items() if syn==1])
-super_test_smiles_non_synth = [
-    smiles for smiles in super_test_smiles
-    if smiles_to_index.get(smiles, None) not in synthetic_index_ids
-]
+print(f"Identified {len(synthetic_index_ids)} synthetic spectra (by index_id)")
+# Keep all SMILES - we'll filter synthetic spectra at the dataframe level
 
 for loop_counter in range(num_loops):
     print(f'\n========== LOOP {loop_counter+1}/{num_loops} ==========')
 
     # SPLIT, FILTER, MAP GROUP/CLEAN (re-randomize every loop!)
     dataset = orig_dataset.copy()
-    # Use NON-synthetic-filtered super test set
-    dataset_no_super_test = dataset[~dataset['SMILES_spectra'].isin(super_test_smiles_non_synth)].copy()
+    # Exclude super test SMILES from training/validation
+    dataset_no_super_test = dataset[~dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
     if 'Group' not in dataset_no_super_test.columns:
         dataset_no_super_test['Group'] = dataset_no_super_test['index_id'].map(id_to_group).fillna('Unknown')
     if 'CE_clean' not in dataset_no_super_test.columns:
@@ -262,8 +259,11 @@ for loop_counter in range(num_loops):
     print(f"✓ Saved intermediate embeddings: {interm_filename}")
 
     # ==== STEP 1: SUPER-TEST EMBEDDINGS ====
-    # Only use non-synthetic SMILES in super test processing
-    super_test_df = dataset[dataset['SMILES_spectra'].isin(super_test_smiles_non_synth)].copy()
+    # Get all super test SMILES, then filter out only synthetic spectra (by index_id)
+    super_test_df_all = dataset[dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
+    super_test_df = super_test_df_all[~super_test_df_all['index_id'].isin(synthetic_index_ids)].copy()
+    print(f"Super test: {len(super_test_df_all)} total spectra, {len(super_test_df)} non-synthetic spectra kept")
+    
     if len(super_test_df) > 0:
         if 'Group' not in super_test_df.columns:
             super_test_df['Group'] = super_test_df['index_id'].map(id_to_group).fillna('Unknown')

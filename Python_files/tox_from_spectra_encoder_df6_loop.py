@@ -85,21 +85,17 @@ id_to_ce_clean = dict(zip(df6_spectra['index_id'], df6_spectra['CE_clean']))
 
 # --- Build synthetic and SMILES lookup ---
 id_to_synthetic = dict(zip(df6_spectra['index_id'], df6_spectra['synthetic'].fillna(0)))
-smiles_to_index = dict(zip(orig_dataset['SMILES_spectra'], orig_dataset['index_id']))
-
-# --- Remove all synthetic from super_test_smiles ---
+# --- Identify synthetic spectra (individual index_ids) ---
 synthetic_index_ids = set(idx for idx, syn in id_to_synthetic.items() if syn == 1)
-super_test_smiles_non_synth = [
-    smiles for smiles in super_test_smiles
-    if smiles_to_index.get(smiles, None) not in synthetic_index_ids
-]
+print(f"Identified {len(synthetic_index_ids)} synthetic spectra (by index_id)")
+# Keep all SMILES - we'll filter synthetic spectra at the dataframe level
 
 for loop_counter in range(num_loops):
     print(f"\n{'='*80}\nLOOP {loop_counter+1}/{num_loops}\n{'='*80}")
 
     dataset = orig_dataset.copy()
-    # Use NON-synthetic-filtered super test set for removal
-    dataset_no_super_test = dataset[~dataset['SMILES_spectra'].isin(super_test_smiles_non_synth)].copy()
+    # Exclude super test SMILES from training/validation
+    dataset_no_super_test = dataset[~dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
 
     if 'Group' not in dataset_no_super_test.columns:
         dataset_no_super_test['Group'] = dataset_no_super_test['index_id'].map(id_to_group).fillna('Unknown')
@@ -248,8 +244,11 @@ for loop_counter in range(num_loops):
     print(f"✓ Saved validation set predictions: {val_out_fn}")
 
     # ==== SUPER TEST ====
-    # ADDED: ensure only non-synthetic SMILES used in super
-    super_test_df = dataset[dataset['SMILES_spectra'].isin(super_test_smiles_non_synth)].copy()
+    # Get all super test SMILES, then filter out only synthetic spectra (by index_id)
+    super_test_df_all = dataset[dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
+    super_test_df = super_test_df_all[~super_test_df_all['index_id'].isin(synthetic_index_ids)].copy()
+    print(f"Super test: {len(super_test_df_all)} total spectra, {len(super_test_df)} non-synthetic spectra kept")
+    
     if len(super_test_df) > 0:
         if 'Group' not in super_test_df.columns:
             super_test_df['Group'] = super_test_df['index_id'].map(id_to_group).fillna('Unknown')

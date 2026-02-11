@@ -153,6 +153,11 @@ print("Creating CE_clean mapping from df6_spectra...")
 id_to_ce_clean = dict(zip(df6_spectra['index_id'], df6_spectra['CE_clean']))
 print(f"CE_clean mapping created with {len(id_to_ce_clean)} entries")
 
+# Load synthetic flag from df6_spectra for all index_ids
+id_to_synthetic = dict(zip(df6_spectra['index_id'], df6_spectra['synthetic'].fillna(0)))
+synthetic_index_ids = set([idx for idx, syn in id_to_synthetic.items() if syn==1])
+print(f"Identified {len(synthetic_index_ids)} synthetic spectra (by index_id)")
+
 # Calculate output size from the fingerprint data
 regular_morgan_bits = morgan_df.shape[1] - 1  # Subtract 1 for SMILES_spectra column
 filtered_morgan_bits = filtered_morgan_df.shape[1] - 1  # Subtract 1 for SMILES_spectra column
@@ -179,6 +184,12 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         removed_count = original_count - len(dataset_no_super_test)
         print(f"Removed {removed_count} samples from super test set")
         
+        # Remove synthetic spectra from training/validation
+        before_synth = len(dataset_no_super_test)
+        dataset_no_super_test = dataset_no_super_test[~dataset_no_super_test['index_id'].isin(synthetic_index_ids)].copy()
+        after_synth = len(dataset_no_super_test)
+        print(f"Removed {before_synth - after_synth} synthetic spectra from training/validation")
+        
         # Add Group and CE_clean columns
         if 'Group' not in dataset_no_super_test.columns:
             dataset_no_super_test['Group'] = dataset_no_super_test['index_id'].map(id_to_group).fillna('Unknown')
@@ -193,8 +204,16 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         
         print(f"After filtering (>=4 spectra per SMILES): {filtered_dataset.shape}")
         
-        # Train/test split for model training
-        smiles_groups = filtered_dataset.groupby('SMILES_spectra')
+        # === Synthetic-awareness in splitting ===
+        # Separate synthetic and real spectra to ensure synthetic only goes to train
+        synthetic_mask = filtered_dataset['index_id'].map(lambda idx: id_to_synthetic.get(idx, 0)==1)
+        real_mask = ~synthetic_mask
+
+        synthetic_data = filtered_dataset[synthetic_mask].copy()
+        real_data = filtered_dataset[real_mask].copy()
+
+        # Train/test split for ONLY real spectra
+        smiles_groups = real_data.groupby('SMILES_spectra')
         train_indices = []
         test_indices = []
         
@@ -207,15 +226,18 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             test_indices.extend(idx[:split])
             train_indices.extend(idx[split:])
         
+        # Add ALL synthetic spectra to train set, NOT to test set
+        train_indices.extend(synthetic_data.index.values)
+        
         train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
         test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
         
         # Create set of training indices for later tracking
         train_indices_set = set(train_indices)
         
-        # Add index column
-        train_data['index'] = range(len(train_data))
-        test_data['index'] = range(len(test_data))
+        # Add 'index' column for tensor function, but preserve original index_id
+        train_data['index'] = train_data['index_id']
+        test_data['index'] = test_data['index_id']
         
         # Process datasets
         train_data_processed = fd.add_response_and_log_response(train_data.copy(), df6_subset, smiles_col='SMILES_spectra')
@@ -307,7 +329,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         
         # Reset index and add sequential index column
         filtered_dataset_full = filtered_dataset_full.reset_index(drop=False, names=['original_index'])
-        filtered_dataset_full['index'] = range(len(filtered_dataset_full))
+        filtered_dataset_full['index'] = filtered_dataset_full['index_id']
         
         # Process dataset
         filtered_dataset_full_processed = fd.add_response_and_log_response(filtered_dataset_full.copy(), df6_subset, smiles_col='SMILES_spectra')
@@ -350,7 +372,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         full_val_output_df['SMILES_spectra'] = filtered_dataset_full_processed['SMILES_spectra'].values
         full_val_output_df['Response'] = filtered_dataset_full_processed['Response'].values
         full_val_output_df['log_response'] = filtered_dataset_full_processed['log_response'].values
-        full_val_output_df['index_id'] = filtered_dataset_full_processed['index'].values
+        full_val_output_df['index_id'] = filtered_dataset_full_processed['index_id'].values
         full_val_output_df['train'] = filtered_dataset_full_processed['train'].values
         
         # Verify train column
@@ -383,7 +405,9 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         # ==================== EVALUATE ON SUPER TEST SET ==================== #
         print("Evaluating on super test set...")
         # Extract super test set from original dataset
-        super_test_df = dataset[dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
+        super_test_df_all = dataset[dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
+        super_test_df = super_test_df_all[~super_test_df_all['index_id'].isin(synthetic_index_ids)].copy()
+        print(f"Super test: {len(super_test_df_all)} total spectra, {len(super_test_df)} non-synthetic spectra kept")
         
         if len(super_test_df) > 0:
             print(f"Super test set size: {len(super_test_df)} samples")
@@ -395,8 +419,8 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             if 'CE_clean' not in super_test_df.columns:
                 super_test_df['CE_clean'] = super_test_df['index_id'].map(id_to_ce_clean).fillna('Unknown')
             
-            # Process super test set
-            super_test_df['index'] = range(len(super_test_df))
+            # Process super test set - preserve index_id
+            super_test_df['index'] = super_test_df['index_id']
             super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
             
             # Create tensors for super test set
@@ -423,7 +447,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             super_test_output_df['SMILES_spectra'] = super_test_processed['SMILES_spectra'].values
             super_test_output_df['Response'] = super_test_processed['Response'].values
             super_test_output_df['log_response'] = super_test_processed['log_response'].values
-            super_test_output_df['index_id'] = super_test_processed['index'].values
+            super_test_output_df['index_id'] = super_test_processed['index_id'].values
             super_test_output_df['train'] = 0  # Super test samples were not in training set
             
             # Save super test set predictions
