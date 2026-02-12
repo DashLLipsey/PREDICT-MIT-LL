@@ -13,8 +13,8 @@ import function_depot as fd
 #### ==== USER-SETTINGS: CHOOSE DATASET AND REPEATS ==== ####
 # --- Dataset config (set these!) ---
 bin_size = 1.0  # 1.0 and 0.1     
-threshold = 0.05  # 0.05 and 0.5
-dataset_name = 'bin1_thresh0_05_df_spectra'  # <-- must match parquet file in grid_search_folder
+threshold = 0.5  # 0.05 and 0.5
+dataset_name = 'bin1_thresh0_5_df_spectra'  # <-- must match parquet file in grid_search_folder
 num_loops = 25      # how many repeated train/val splits & models
 
 # --- Output folders ---
@@ -71,8 +71,8 @@ embedding_batch_size = 128
 embedding_epochs = 300
 embedding_lr = 0.0001
 lambda1 = 15
-lambda3 = 10
-lambda4 = 15
+lambda3 = 5
+lambda4 = 10
 dropout1 = 0.35
 
 input_length=4608

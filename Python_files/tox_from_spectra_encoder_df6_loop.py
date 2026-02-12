@@ -11,7 +11,7 @@ import function_depot as fd
 
 ### USER SETTINGS
 dataset_name = 'bin1_thresh0_05_df_spectra'  # 'bin1_thresh0_05_df_spectra'
-num_loops = 5
+num_loops = 25
 
 VAL_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop"
 SUPER_DIR = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop_super_test"
@@ -58,7 +58,7 @@ def parse_dataset_name(dataset_name):
     return bin_size, threshold
 
 num_classes = 5
-num_layers = 1
+num_layers = 4
 batch_size = 256
 epochs = 350
 lr = 0.0001
@@ -66,6 +66,7 @@ dropout = 0.2
 layer1_size = 32
 layer2_size = 250
 layer3_size = 50
+layer4_size = 20
 criterion = CrossEntropyLoss()
 
 print("=== DIRECT TOXICITY PREDICTION (Repeat Loops) ===")
