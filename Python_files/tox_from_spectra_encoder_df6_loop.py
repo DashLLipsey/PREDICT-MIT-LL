@@ -234,9 +234,16 @@ for loop_counter in range(num_loops):
     full_val_output_df['true_tox_class'] = y_full_val_tox.cpu().numpy()
     full_val_output_df['SMILES_spectra'] = filtered_dataset_full_processed['SMILES_spectra'].values
     full_val_output_df['Response'] = filtered_dataset_full_processed['Response'].values
-    full_val_output_df['log_response'] = filtered_dataset_full_processed['log_response'].values
     full_val_output_df['index_id'] = filtered_dataset_full_processed['index_id'].values  # Keep original index_id!
+    full_val_output_df['Group'] = filtered_dataset_full_processed['Group'].values
+    full_val_output_df['CE_clean'] = filtered_dataset_full_processed['CE_clean'].values
     full_val_output_df['train'] = filtered_dataset_full_processed['train'].values
+
+    # Reorder columns: metadata, true class, logits/predictions, train
+    metadata_cols = ['SMILES_spectra', 'index_id', 'Response', 'Group', 'CE_clean']
+    prediction_cols = ['true_tox_class'] + tox_logits_cols + ['direct_tox_pred_class']
+    column_order = metadata_cols + prediction_cols + ['train']
+    full_val_output_df = full_val_output_df[column_order]
 
     # SAVE MAIN VALIDATION OUT
     val_out_fn = f"direct_tox_{dataset_name}_loop{loop_counter}.parquet"
@@ -270,9 +277,17 @@ for loop_counter in range(num_loops):
         super_test_output_df['true_tox_class'] = y_super_test_tox.cpu().numpy()
         super_test_output_df['SMILES_spectra'] = super_test_processed['SMILES_spectra'].values
         super_test_output_df['Response'] = super_test_processed['Response'].values
-        super_test_output_df['log_response'] = super_test_processed['log_response'].values
         super_test_output_df['index_id'] = super_test_processed['index_id'].values  # Keep original index_id!
+        super_test_output_df['Group'] = super_test_processed['Group'].values
+        super_test_output_df['CE_clean'] = super_test_processed['CE_clean'].values
         super_test_output_df['train'] = 0
+        
+        # Reorder columns: metadata, true class, logits/predictions, train
+        metadata_cols = ['SMILES_spectra', 'index_id', 'Response', 'Group', 'CE_clean']
+        prediction_cols = ['true_tox_class'] + tox_logits_cols + ['direct_tox_pred_class']
+        column_order = metadata_cols + prediction_cols + ['train']
+        super_test_output_df = super_test_output_df[column_order]
+        
         super_fn = f"super_test_direct_tox_{dataset_name}_loop{loop_counter}.parquet"
         super_path = os.path.join(SUPER_DIR, super_fn)
         super_test_output_df.to_parquet(super_path, index=False)

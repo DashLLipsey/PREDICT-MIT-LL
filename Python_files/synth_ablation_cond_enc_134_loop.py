@@ -13,8 +13,8 @@ import function_depot as fd
 #### ==== USER-SETTINGS: CHOOSE DATASET AND REPEATS ==== ####
 # --- Dataset config (set these!) ---
 bin_size = 1.0  # 1.0 and 0.1     
-threshold = 0.5  # 0.5 and 0.05
-dataset_name = 'bin1_thresh0_5_df_spectra'  # <-- must match parquet file in grid_search_folder
+threshold = 0.05  # 0.5 and 0.05
+dataset_name = 'bin1_thresh0_05_df_spectra'  # <-- must match parquet file in grid_search_folder
 num_loops = 25       # how many repeated train/val splits & models
 
 # --- Output folders (all must exist or will be made) ---
@@ -61,14 +61,14 @@ super_test_smiles = [
 ]
 
 #### ==== Model params ==== ####
-embedding_num_layers = 4
+embedding_num_layers = 6
 embedding_batch_size = 128
-embedding_epochs = 300
+embedding_epochs = 500
 embedding_lr = 0.0001
-lambda1 = 15
-lambda3 = 10
-lambda4 = 15
-dropout1 = 0.35
+lambda1 = 5
+lambda3 = 1
+lambda4 = 3
+dropout1 = 0.5
 
 input_length=4608
 tox_num_layers = 4
@@ -120,17 +120,14 @@ for loop_counter in range(num_loops):
     valid_smiles = counts[counts >= 4].index
     filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
 
-    # Split train/test with SEED = loop_counter
-    smiles_groups = filtered_dataset.groupby('SMILES_spectra')
-    train_indices, test_indices = [], []
+    # --- Simple 50-50 random split ---
     np.random.seed(loop_counter + 42)
-    for smiles, group in smiles_groups:
-        idx = group.index.values
-        n = len(idx)
-        np.random.shuffle(idx)
-        split = n // 2
-        test_indices.extend(idx[:split])
-        train_indices.extend(idx[split:])
+    all_indices = filtered_dataset.index.values
+    np.random.shuffle(all_indices)
+    split_point = len(all_indices) // 2
+    train_indices = all_indices[split_point:]
+    test_indices = all_indices[:split_point]
+    
     train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
     test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
 
@@ -224,7 +221,8 @@ for loop_counter in range(num_loops):
     intermediate_df['SMILES_spectra'] = combined_processed['SMILES_spectra'].values
     intermediate_df['index_id'] = combined_processed['index_id'].values  # Keep original index_id!
     intermediate_df['Response'] = combined_processed['Response'].values
-    intermediate_df['log_response'] = combined_processed['log_response'].values
+    intermediate_df['Group'] = combined_processed['Group'].values
+    intermediate_df['CE_clean'] = combined_processed['CE_clean'].values
     if 'tox_level' in combined_processed.columns:
         intermediate_df['tox_level'] = combined_processed['tox_level'].values
     for k in range(5):
@@ -232,6 +230,14 @@ for loop_counter in range(num_loops):
         if col in combined_processed.columns:
             intermediate_df[col] = combined_processed[col].values
     intermediate_df['train'] = [1]*len(train_data_processed) + [0]*len(test_data_processed)
+
+    # Reorder columns: metadata, embeddings, train
+    metadata_cols = ['SMILES_spectra', 'index_id', 'Response', 'Group', 'CE_clean']
+    tox_cols = ['tox_level'] + [f'tox_level_{k}' for k in range(5)]
+    metadata_cols.extend([col for col in tox_cols if col in intermediate_df.columns])
+    embedding_cols = emb_cols + morgan_cols + filtered_morgan_cols
+    column_order = metadata_cols + embedding_cols + ['train']
+    intermediate_df = intermediate_df[column_order]
 
     interm_filename = f"intermediate_embeddings_{dataset_name}_loop{loop_counter}.parquet"
     interm_path = os.path.join(VAL_INT_DIR, interm_filename)
@@ -274,18 +280,24 @@ for loop_counter in range(num_loops):
         super_test_emb_df['SMILES_spectra'] = super_test_processed['SMILES_spectra'].values
         super_test_emb_df['index_id'] = super_test_processed['index_id'].values  # Keep original index_id!
         super_test_emb_df['Response'] = super_test_processed['Response'].values
-        super_test_emb_df['log_response'] = super_test_processed['log_response'].values
+        super_test_emb_df['Group'] = super_test_processed['Group'].values
+        super_test_emb_df['CE_clean'] = super_test_processed['CE_clean'].values
         if 'tox_level' in super_test_processed.columns:
             super_test_emb_df['tox_level'] = super_test_processed['tox_level'].values
         for k in range(5):
             col = f'tox_level_{k}'
             if col in super_test_processed.columns:
                 super_test_emb_df[col] = super_test_processed[col].values
-        if 'Group' in super_test_processed.columns:
-            super_test_emb_df['Group'] = super_test_processed['Group'].values
-        if 'CE_clean' in super_test_processed.columns:
-            super_test_emb_df['CE_clean'] = super_test_processed['CE_clean'].values
         super_test_emb_df['train'] = 0
+        
+        # Reorder columns: metadata, embeddings, train
+        metadata_cols = ['SMILES_spectra', 'index_id', 'Response', 'Group', 'CE_clean']
+        tox_cols = ['tox_level'] + [f'tox_level_{k}' for k in range(5)]
+        metadata_cols.extend([col for col in tox_cols if col in super_test_emb_df.columns])
+        embedding_cols = emb_cols + morgan_cols + filtered_morgan_cols
+        column_order = metadata_cols + embedding_cols + ['train']
+        super_test_emb_df = super_test_emb_df[column_order]
+        
         super_interm_filename = f"super_test_intermediate_embeddings_{dataset_name}_loop{loop_counter}.parquet"
         super_interm_path = os.path.join(SUPER_INT_DIR, super_interm_filename)
         super_test_emb_df.to_parquet(super_interm_path, index=False)
@@ -367,9 +379,19 @@ for loop_counter in range(num_loops):
     train_intermediate_df['cond_tox_pred_class'] = np.argmax(train_tox_logits, axis=1)
     val_intermediate_df['cond_tox_pred_class'] = np.argmax(val_tox_logits, axis=1)
     full_val_output_df = pd.concat([train_intermediate_df, val_intermediate_df], axis=0).reset_index(drop=True)
-    for col in ['SMILES_spectra', 'index_id', 'Response', 'log_response', 'train', 'tox_level', 'tox_level_0', 'tox_level_1', 'tox_level_2', 'tox_level_3', 'tox_level_4', 'Group', 'CE_clean']:
+    for col in ['SMILES_spectra', 'index_id', 'Response', 'train', 'tox_level', 'tox_level_0', 'tox_level_1', 'tox_level_2', 'tox_level_3', 'tox_level_4', 'Group', 'CE_clean']:
         if col in intermediate_df.columns and col not in full_val_output_df.columns:
             full_val_output_df[col] = intermediate_df[col].values
+
+    # Reorder columns: metadata, embeddings, logits/predictions, train
+    metadata_cols = ['SMILES_spectra', 'index_id', 'Response', 'Group', 'CE_clean']
+    tox_cols = ['tox_level'] + [f'tox_level_{k}' for k in range(5)]
+    metadata_cols.extend([col for col in tox_cols if col in full_val_output_df.columns])
+    embedding_cols = emb_cols + morgan_cols + filtered_morgan_cols
+    prediction_cols = tox_logits_cols + ['cond_tox_pred_class']
+    column_order = metadata_cols + embedding_cols + prediction_cols + ['train']
+    column_order = [col for col in column_order if col in full_val_output_df.columns]
+    full_val_output_df = full_val_output_df[column_order]
 
     # Save intermediate, then FINAL val
     val_final_fn = f"cond_enc_{dataset_name}_loop{loop_counter}.parquet"
@@ -391,6 +413,16 @@ for loop_counter in range(num_loops):
                 super_test_intermediate_df[col] = super_test_tox_logits[:, i]
             super_test_intermediate_df['cond_tox_pred_class'] = np.argmax(super_test_tox_logits, axis=1)
             super_test_intermediate_df['train'] = 0 # All super test
+
+            # Reorder columns: metadata, embeddings, logits/predictions, train
+            metadata_cols = ['SMILES_spectra', 'index_id', 'Response', 'Group', 'CE_clean']
+            tox_cols = ['tox_level'] + [f'tox_level_{k}' for k in range(5)]
+            metadata_cols.extend([col for col in tox_cols if col in super_test_intermediate_df.columns])
+            embedding_cols = emb_cols + morgan_cols + filtered_morgan_cols
+            prediction_cols = tox_logits_cols + ['cond_tox_pred_class']
+            column_order = metadata_cols + embedding_cols + prediction_cols + ['train']
+            column_order = [col for col in column_order if col in super_test_intermediate_df.columns]
+            super_test_intermediate_df = super_test_intermediate_df[column_order]
 
             super_final_fn = f"super_test_cond_enc_{dataset_name}_loop{loop_counter}.parquet"
             super_final_path = os.path.join(SUPER_FINAL_DIR, super_final_fn)
