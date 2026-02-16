@@ -58,7 +58,7 @@ def parse_dataset_name(dataset_name):
     return bin_size, threshold
 
 num_classes = 5
-num_layers = 4
+num_layers = 6
 batch_size = 256
 epochs = 350
 lr = 0.0001
@@ -67,6 +67,8 @@ layer1_size = 32
 layer2_size = 250
 layer3_size = 50
 layer4_size = 20
+layer5_size = 10
+layer6_size = 5
 criterion = CrossEntropyLoss()
 
 print("=== DIRECT TOXICITY PREDICTION (Repeat Loops) ===")
@@ -113,17 +115,14 @@ for loop_counter in range(num_loops):
     synthetic_data = filtered_dataset[synthetic_mask].copy()
     real_data = filtered_dataset[real_mask].copy()
 
-    # Split only real spectra as before
-    smiles_groups = real_data.groupby('SMILES_spectra')
-    train_indices, test_indices = [], []
+    # Simple 50/50 split of real spectra (not SMILES-based)
+    real_indices = real_data.index.values
     np.random.seed(loop_counter + 42)
-    for smiles, group in smiles_groups:
-        idx = group.index.values
-        n = len(idx)
-        np.random.shuffle(idx)
-        split = n // 2
-        test_indices.extend(idx[:split])
-        train_indices.extend(idx[split:])
+    np.random.shuffle(real_indices)
+    split = len(real_indices) // 2
+    test_indices = real_indices[:split].tolist()
+    train_indices = real_indices[split:].tolist()
+    
     # Add ALL synthetic to train, not test
     train_indices.extend(synthetic_data.index.values)
 

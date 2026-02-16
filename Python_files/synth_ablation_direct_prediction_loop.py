@@ -58,7 +58,7 @@ def parse_dataset_name(dataset_name):
     return bin_size, threshold
 
 num_classes = 5
-num_layers = 4
+num_layers = 6
 batch_size = 256
 epochs = 350
 lr = 0.0001
@@ -66,6 +66,9 @@ dropout = 0.2
 layer1_size = 1000
 layer2_size = 250
 layer3_size = 50
+layer4_size = 20
+layer5_size = 10
+layer6_size = 5
 criterion = CrossEntropyLoss()
 
 
@@ -103,17 +106,13 @@ for loop_counter in range(num_loops):
     valid_smiles = counts[counts >= 4].index
     filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
 
-    # New random split per loop
-    smiles_groups = filtered_dataset.groupby('SMILES_spectra')
-    train_indices, test_indices = [], []
+    # New random split per loop (simple 50/50 split)
+    all_indices = filtered_dataset.index.values
     np.random.seed(loop_counter + 42)
-    for smiles, group in smiles_groups:
-        idx = group.index.values
-        n = len(idx)
-        np.random.shuffle(idx)
-        split = n // 2
-        test_indices.extend(idx[:split])
-        train_indices.extend(idx[split:])
+    np.random.shuffle(all_indices)
+    split = len(all_indices) // 2
+    test_indices = all_indices[:split]
+    train_indices = all_indices[split:]
     train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
     test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
     train_indices_set = set(train_indices)
