@@ -10,8 +10,8 @@ import functions_enc as f
 import function_depot as fd
 
 ### USER SETTINGS
-dataset_name = 'bin1_thresh0_5_df_spectra'  # 'bin1_thresh0_05_df_spectra'
-num_loops = 25
+dataset_name = 'bin1_thresh0_05_df_spectra'  # 'bin1_thresh0_05_df_spectra'
+num_loops = 5
 
 VAL_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_synth_abl_loop"
 SUPER_DIR = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_synth_abl_loop_super_test"
@@ -91,27 +91,47 @@ for loop_counter in range(num_loops):
 
     dataset = orig_dataset.copy()
     dataset_no_super_test = dataset[~dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
-    # ---- Remove rows where df6_spectra synthetic==1 ----
+    
+    # ===================================================================
+    # SYNTHETIC ABLATION: Remove all synthetic spectra from dataset
+    # ===================================================================
     synthetic_ids = set(df6_spectra.loc[df6_spectra['synthetic'] == 1, 'index_id'])
     before_synth = len(dataset_no_super_test)
     dataset_no_super_test = dataset_no_super_test[~dataset_no_super_test['index_id'].isin(synthetic_ids)].copy()
     after_synth = len(dataset_no_super_test)
     print(f"Removed {before_synth - after_synth} samples with synthetic==1")
+    
     if 'Group' not in dataset_no_super_test.columns:
         dataset_no_super_test['Group'] = dataset_no_super_test['index_id'].map(id_to_group).fillna('Unknown')
     if 'CE_clean' not in dataset_no_super_test.columns:
         dataset_no_super_test['CE_clean'] = dataset_no_super_test['index_id'].map(id_to_ce_clean).fillna('Unknown')
+    
+    # Filter for SMILES with at least 4 spectra
     counts = dataset_no_super_test['SMILES_spectra'].value_counts()
     valid_smiles = counts[counts >= 4].index
     filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
 
-    # New random split per loop (simple 50/50 split)
-    all_indices = filtered_dataset.index.values
-    np.random.seed(loop_counter + 42)
-    np.random.shuffle(all_indices)
-    split = len(all_indices) // 2
-    test_indices = all_indices[:split]
-    train_indices = all_indices[split:]
+    # ===================================================================
+    # TRAIN-TEST SPLIT: SMILES-based alternating assignment
+    # Sorts SMILES by spectra count (ascending) and alternates assignment
+    # to ensure balanced set sizes while keeping all spectra for each
+    # SMILES together (no data leakage between train/test)
+    # Note: Synthetic data already removed in ablation study
+    # ===================================================================
+    # Count spectra per SMILES and sort in ascending order
+    smiles_counts = filtered_dataset['SMILES_spectra'].value_counts().sort_values(ascending=True)
+    
+    train_indices = []
+    test_indices = []
+    
+    # Alternate assignment: first SMILES to train, second to test, etc.
+    for i, smiles in enumerate(smiles_counts.index):
+        smiles_indices = filtered_dataset[filtered_dataset['SMILES_spectra'] == smiles].index.values
+        if i % 2 == 0:  # Even index -> train
+            train_indices.extend(smiles_indices)
+        else:  # Odd index -> test
+            test_indices.extend(smiles_indices)
+    
     train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
     test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
     train_indices_set = set(train_indices)

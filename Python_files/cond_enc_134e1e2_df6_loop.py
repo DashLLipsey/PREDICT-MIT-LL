@@ -73,7 +73,7 @@ embedding_lr = 0.0001
 lambda1 = 5
 lambda3 = 1
 lambda4 = 3
-dropout1 = 0.35
+dropout1 = 0.5
 
 input_length=4608
 tox_num_layers = 4
@@ -81,7 +81,7 @@ tox_batch_size = 256
 tox_epochs = 500
 tox_lr = 0.0001
 tox_num_classes = 5
-dropout2 = 0.35
+dropout2 = 0.5
 
 layer1_size = 1000
 layer2_size = 250
@@ -126,22 +126,22 @@ for loop_counter in range(num_loops):
     if 'CE_clean' not in dataset_no_super_test.columns:
         dataset_no_super_test['CE_clean'] = dataset_no_super_test['index_id'].map(id_to_ce_clean).fillna('Unknown')
     
-    # === OPTION 1: Filter SMILES based on real spectra only (RECOMMENDED) ===
-    # Commment out to switch to not removing SMILES.
-    # Separate synthetic first, BEFORE filtering for valid SMILES
-    synthetic_mask_temp = dataset_no_super_test['index_id'].map(lambda idx: id_to_synthetic.get(idx, 0)==1)
-    real_data_temp = dataset_no_super_test[~synthetic_mask_temp].copy()
-    # Count only REAL spectra per SMILES
-    counts = real_data_temp['SMILES_spectra'].value_counts()
-    valid_smiles = counts[counts >= 4].index
-    # Now filter the full dataset (real + synthetic) to those SMILES
-    filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
-    
-    # # === OPTION 2: Filter SMILES based on total count (real + synthetic) ===
-    # # Comment out to switch to option 1
-    # counts = dataset_no_super_test['SMILES_spectra'].value_counts()
+    # # === OPTION 1: Filter SMILES based on real spectra only (RECOMMENDED) ===
+    # # Commment out to switch to not removing SMILES.
+    # # Separate synthetic first, BEFORE filtering for valid SMILES
+    # synthetic_mask_temp = dataset_no_super_test['index_id'].map(lambda idx: id_to_synthetic.get(idx, 0)==1)
+    # real_data_temp = dataset_no_super_test[~synthetic_mask_temp].copy()
+    # # Count only REAL spectra per SMILES
+    # counts = real_data_temp['SMILES_spectra'].value_counts()
     # valid_smiles = counts[counts >= 4].index
+    # # Now filter the full dataset (real + synthetic) to those SMILES
     # filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
+    
+    # === OPTION 2: Filter SMILES based on total count (real + synthetic) ===
+    # Comment out to switch to option 1
+    counts = dataset_no_super_test['SMILES_spectra'].value_counts()
+    valid_smiles = counts[counts >= 4].index
+    filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
 
     # === Synthetic-awareness in splitting ===
     # Create masks for synthetic and "real" index_ids:
@@ -151,27 +151,25 @@ for loop_counter in range(num_loops):
     synthetic_data = filtered_dataset[synthetic_mask].copy()
     real_data = filtered_dataset[real_mask].copy()
 
-    # # --- Old SMILES based split only real_data ---
-    # smiles_groups = real_data.groupby('SMILES_spectra')
-    # train_indices, test_indices = [], []
-    # np.random.seed(loop_counter + 42)
-    # for smiles, group in smiles_groups:
-    #     idx = group.index.values
-    #     n = len(idx)
-    #     np.random.shuffle(idx)
-    #     split = n // 2
-    #     test_indices.extend(idx[:split])
-    #     train_indices.extend(idx[split:])
-    # # NOW: Add ALL synthetic to training, NOT to test
-    # train_indices.extend(synthetic_data.index.values)
-
-    # --- Simple 50-50 random split on real data only ---
-    np.random.seed(loop_counter + 42)
-    real_indices = real_data.index.values
-    np.random.shuffle(real_indices)
-    split_point = len(real_indices) // 2
-    train_indices = list(real_indices[split_point:])
-    test_indices = list(real_indices[:split_point])
+    # ===================================================================
+    # TRAIN-TEST SPLIT: SMILES-based alternating assignment
+    # Sorts SMILES by spectra count (ascending) and alternates assignment
+    # to ensure balanced set sizes while keeping all spectra for each
+    # SMILES together (no data leakage between train/test)
+    # ===================================================================
+    # Count spectra per SMILES and sort in ascending order
+    smiles_counts = real_data['SMILES_spectra'].value_counts().sort_values(ascending=True)
+    
+    train_indices = []
+    test_indices = []
+    
+    # Alternate assignment: first SMILES to train, second to test, etc.
+    for i, smiles in enumerate(smiles_counts.index):
+        smiles_indices = real_data[real_data['SMILES_spectra'] == smiles].index.values
+        if i % 2 == 0:  # Even index -> train
+            train_indices.extend(smiles_indices)
+        else:  # Odd index -> test
+            test_indices.extend(smiles_indices)
     
     # Add ALL synthetic to training, NOT to test
     train_indices.extend(synthetic_data.index.values)

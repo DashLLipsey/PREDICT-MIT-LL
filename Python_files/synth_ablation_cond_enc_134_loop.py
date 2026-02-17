@@ -68,7 +68,7 @@ embedding_lr = 0.0001
 lambda1 = 5
 lambda3 = 1
 lambda4 = 3
-dropout1 = 0.35
+dropout1 = 0.5
 
 input_length=4608
 tox_num_layers = 4
@@ -76,7 +76,7 @@ tox_batch_size = 256
 tox_epochs = 500
 tox_lr = 0.0001
 tox_num_classes = 5
-dropout2 = 0.35
+dropout2 = 0.5
 
 layer1_size = 1000
 layer2_size = 250
@@ -112,37 +112,36 @@ for loop_counter in range(num_loops):
     if 'CE_clean' not in dataset_no_super_test.columns:
         dataset_no_super_test['CE_clean'] = dataset_no_super_test['index_id'].map(id_to_ce_clean).fillna('Unknown')
     
-    # === OPTION 1: Filter SMILES based on real spectra only (RECOMMENDED) ===
-    # Filter for valid SMILES BEFORE removing synthetic, but count only real spectra
+    # ===================================================================
+    # SYNTHETIC ABLATION: Remove all synthetic spectra from dataset
+    # ===================================================================
     synthetic_ids = set(df6_spectra.loc[df6_spectra['synthetic'] == 1, 'index_id'])
-    real_data_temp = dataset_no_super_test[~dataset_no_super_test['index_id'].isin(synthetic_ids)].copy()
-    # Count only REAL spectra per SMILES
-    counts = real_data_temp['SMILES_spectra'].value_counts()
-    valid_smiles = counts[counts >= 4].index
-    # Filter full dataset to those SMILES, THEN remove synthetic
-    filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
-    before_synth = len(filtered_dataset)
-    filtered_dataset = filtered_dataset[~filtered_dataset['index_id'].isin(synthetic_ids)].copy()
-    after_synth = len(filtered_dataset)
+    before_synth = len(dataset_no_super_test)
+    dataset_no_super_test = dataset_no_super_test[~dataset_no_super_test['index_id'].isin(synthetic_ids)].copy()
+    after_synth = len(dataset_no_super_test)
     print(f"Removed {before_synth - after_synth} samples with synthetic==1")
     
-    # === OPTION 2: Old method - remove synthetic first, then filter ===
-    # synthetic_ids = set(df6_spectra.loc[df6_spectra['synthetic'] == 1, 'index_id'])
-    # before_synth = len(dataset_no_super_test)
-    # dataset_no_super_test = dataset_no_super_test[~dataset_no_super_test['index_id'].isin(synthetic_ids)].copy()
-    # after_synth = len(dataset_no_super_test)
-    # print(f"Removed {before_synth - after_synth} samples with synthetic==1")
-    # counts = dataset_no_super_test['SMILES_spectra'].value_counts()
-    # valid_smiles = counts[counts >= 4].index
-    # filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
+    # Filter for SMILES with at least 4 spectra
+    counts = dataset_no_super_test['SMILES_spectra'].value_counts()
+    valid_smiles = counts[counts >= 4].index
+    filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
 
-    # --- Simple 50-50 random split ---
+    # ===================================================================
+    # TRAIN-TEST SPLIT: SMILES-based 50/50 split (with extras to train)
+    # Splits each SMILES group 50/50 between train and test
+    # ensuring no data leakage between sets
+    # Note: Synthetic data already removed in ablation study
+    # ===================================================================
+    smiles_groups = filtered_dataset.groupby('SMILES_spectra')
+    train_indices, test_indices = [], []
     np.random.seed(loop_counter + 42)
-    all_indices = filtered_dataset.index.values
-    np.random.shuffle(all_indices)
-    split_point = len(all_indices) // 2
-    train_indices = all_indices[split_point:]
-    test_indices = all_indices[:split_point]
+    for smiles, group in smiles_groups:
+        idx = group.index.values
+        n = len(idx)
+        np.random.shuffle(idx)
+        split = n // 2
+        test_indices.extend(idx[:split])
+        train_indices.extend(idx[split:])
     
     train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
     test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)

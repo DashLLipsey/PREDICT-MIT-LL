@@ -10,8 +10,8 @@ import functions_enc as f
 import function_depot as fd
 
 ### USER SETTINGS
-dataset_name = 'bin1_thresh0_5_df_spectra'  # 'bin1_thresh0_05_df_spectra'
-num_loops = 25
+dataset_name = 'bin1_thresh0_05_df_spectra'  # 'bin1_thresh0_05_df_spectra'
+num_loops = 5
 
 VAL_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop"
 SUPER_DIR = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop_super_test"
@@ -106,22 +106,36 @@ for loop_counter in range(num_loops):
     valid_smiles = counts[counts >= 4].index
     filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
 
-    # === ADDED: Ensure all synthetic spectra are only in train ===
+    # === Synthetic-awareness in splitting ===
     synthetic_mask = filtered_dataset['index_id'].map(lambda idx: id_to_synthetic.get(idx, 0)==1)
     real_mask = ~synthetic_mask
 
     synthetic_data = filtered_dataset[synthetic_mask].copy()
     real_data = filtered_dataset[real_mask].copy()
 
-    # Simple 50/50 split of real spectra (not SMILES-based)
-    real_indices = real_data.index.values
-    np.random.seed(loop_counter + 42)
-    np.random.shuffle(real_indices)
-    split = len(real_indices) // 2
-    test_indices = real_indices[:split].tolist()
-    train_indices = real_indices[split:].tolist()
+    # ===================================================================
+    # TRAIN-TEST SPLIT: SMILES × CE_clean stratified split
+    # For each SMILES, splits each CE_clean level evenly between train/test
+    # Extras go to training. Ensures balanced representation of both SMILES
+    # and collision energies across train/test sets. NaN/Unknown CE values
+    # are handled the same way (grouped and split).
+    # ===================================================================
+    train_indices = []
+    test_indices = []
     
-    # Add ALL synthetic to train, not test
+    # Set random seed for reproducibility across loops
+    np.random.seed(loop_counter + 42)
+    
+    # Process real data: group by SMILES, then by CE_clean within each SMILES
+    for smiles, smiles_group in real_data.groupby('SMILES_spectra'):
+        for ce_level, ce_group in smiles_group.groupby('CE_clean'):
+            group_indices = ce_group.index.values
+            np.random.shuffle(group_indices)
+            split_point = len(group_indices) // 2
+            test_indices.extend(group_indices[:split_point])
+            train_indices.extend(group_indices[split_point:])  # extras go to train
+    
+    # Add ALL synthetic to training, NOT to test
     train_indices.extend(synthetic_data.index.values)
 
     train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
