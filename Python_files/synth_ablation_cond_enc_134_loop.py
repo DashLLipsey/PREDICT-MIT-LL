@@ -15,7 +15,7 @@ import function_depot as fd
 bin_size = 1.0  # 1.0 and 0.1     
 threshold = 0.05  # 0.5 and 0.05
 dataset_name = 'bin1_thresh0_05_df_spectra'  # <-- must match parquet file in grid_search_folder
-num_loops = 25       # how many repeated train/val splits & models
+num_loops = 3       # how many repeated train/val splits & models
 
 # --- Output folders (all must exist or will be made) ---
 VAL_INT_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_intermediate"
@@ -62,21 +62,21 @@ super_test_smiles = [
 
 #### ==== Model params ==== ####
 embedding_num_layers = 6
-embedding_batch_size = 128
+embedding_batch_size = 256
 embedding_epochs = 500
 embedding_lr = 0.0001
 lambda1 = 5
 lambda3 = 1
 lambda4 = 3
-dropout1 = 0.5
+dropout1 = 0.35
 
 input_length=4608
 tox_num_layers = 4
-tox_batch_size = 128
-tox_epochs = 250
+tox_batch_size = 256
+tox_epochs = 500
 tox_lr = 0.0001
 tox_num_classes = 5
-dropout2 = 0.2
+dropout2 = 0.35
 
 layer1_size = 1000
 layer2_size = 250
@@ -106,19 +106,35 @@ for loop_counter in range(num_loops):
     # SPLIT, FILTER, MAP GROUP/CLEAN (re-randomize every loop!)
     dataset = orig_dataset.copy()
     dataset_no_super_test = dataset[~dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
-    # ---- Remove rows where df6_spectra synthetic==1 ----
-    synthetic_ids = set(df6_spectra.loc[df6_spectra['synthetic'] == 1, 'index_id'])
-    before_synth = len(dataset_no_super_test)
-    dataset_no_super_test = dataset_no_super_test[~dataset_no_super_test['index_id'].isin(synthetic_ids)].copy()
-    after_synth = len(dataset_no_super_test)
-    print(f"Removed {before_synth - after_synth} samples with synthetic==1")
+    
     if 'Group' not in dataset_no_super_test.columns:
         dataset_no_super_test['Group'] = dataset_no_super_test['index_id'].map(id_to_group).fillna('Unknown')
     if 'CE_clean' not in dataset_no_super_test.columns:
         dataset_no_super_test['CE_clean'] = dataset_no_super_test['index_id'].map(id_to_ce_clean).fillna('Unknown')
-    counts = dataset_no_super_test['SMILES_spectra'].value_counts()
+    
+    # === OPTION 1: Filter SMILES based on real spectra only (RECOMMENDED) ===
+    # Filter for valid SMILES BEFORE removing synthetic, but count only real spectra
+    synthetic_ids = set(df6_spectra.loc[df6_spectra['synthetic'] == 1, 'index_id'])
+    real_data_temp = dataset_no_super_test[~dataset_no_super_test['index_id'].isin(synthetic_ids)].copy()
+    # Count only REAL spectra per SMILES
+    counts = real_data_temp['SMILES_spectra'].value_counts()
     valid_smiles = counts[counts >= 4].index
+    # Filter full dataset to those SMILES, THEN remove synthetic
     filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
+    before_synth = len(filtered_dataset)
+    filtered_dataset = filtered_dataset[~filtered_dataset['index_id'].isin(synthetic_ids)].copy()
+    after_synth = len(filtered_dataset)
+    print(f"Removed {before_synth - after_synth} samples with synthetic==1")
+    
+    # === OPTION 2: Old method - remove synthetic first, then filter ===
+    # synthetic_ids = set(df6_spectra.loc[df6_spectra['synthetic'] == 1, 'index_id'])
+    # before_synth = len(dataset_no_super_test)
+    # dataset_no_super_test = dataset_no_super_test[~dataset_no_super_test['index_id'].isin(synthetic_ids)].copy()
+    # after_synth = len(dataset_no_super_test)
+    # print(f"Removed {before_synth - after_synth} samples with synthetic==1")
+    # counts = dataset_no_super_test['SMILES_spectra'].value_counts()
+    # valid_smiles = counts[counts >= 4].index
+    # filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
 
     # --- Simple 50-50 random split ---
     np.random.seed(loop_counter + 42)

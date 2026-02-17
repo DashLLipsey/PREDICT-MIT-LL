@@ -15,7 +15,7 @@ import function_depot as fd
 bin_size = 1.0  # 1.0 and 0.1     
 threshold = 0.05  # 0.05 and 0.5
 dataset_name = 'bin1_thresh0_05_df_spectra'  # <-- must match parquet file in grid_search_folder
-num_loops = 25      # how many repeated train/val splits & models
+num_loops = 3      # how many repeated train/val splits & models
 
 # --- Output folders ---
 VAL_INT_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_cond_enc_134_loop_intermediate"
@@ -67,21 +67,21 @@ super_test_smiles = [
 
 #### ==== Model params ==== ####
 embedding_num_layers = 6
-embedding_batch_size = 128
+embedding_batch_size = 256
 embedding_epochs = 500
 embedding_lr = 0.0001
 lambda1 = 5
 lambda3 = 1
 lambda4 = 3
-dropout1 = 0.5
+dropout1 = 0.35
 
 input_length=4608
 tox_num_layers = 4
-tox_batch_size = 128
-tox_epochs = 250
+tox_batch_size = 256
+tox_epochs = 500
 tox_lr = 0.0001
 tox_num_classes = 5
-dropout2 = 0.2
+dropout2 = 0.35
 
 layer1_size = 1000
 layer2_size = 250
@@ -125,9 +125,23 @@ for loop_counter in range(num_loops):
         dataset_no_super_test['Group'] = dataset_no_super_test['index_id'].map(id_to_group).fillna('Unknown')
     if 'CE_clean' not in dataset_no_super_test.columns:
         dataset_no_super_test['CE_clean'] = dataset_no_super_test['index_id'].map(id_to_ce_clean).fillna('Unknown')
-    counts = dataset_no_super_test['SMILES_spectra'].value_counts()
+    
+    # === OPTION 1: Filter SMILES based on real spectra only (RECOMMENDED) ===
+    # Commment out to switch to not removing SMILES.
+    # Separate synthetic first, BEFORE filtering for valid SMILES
+    synthetic_mask_temp = dataset_no_super_test['index_id'].map(lambda idx: id_to_synthetic.get(idx, 0)==1)
+    real_data_temp = dataset_no_super_test[~synthetic_mask_temp].copy()
+    # Count only REAL spectra per SMILES
+    counts = real_data_temp['SMILES_spectra'].value_counts()
     valid_smiles = counts[counts >= 4].index
+    # Now filter the full dataset (real + synthetic) to those SMILES
     filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
+    
+    # # === OPTION 2: Filter SMILES based on total count (real + synthetic) ===
+    # # Comment out to switch to option 1
+    # counts = dataset_no_super_test['SMILES_spectra'].value_counts()
+    # valid_smiles = counts[counts >= 4].index
+    # filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
 
     # === Synthetic-awareness in splitting ===
     # Create masks for synthetic and "real" index_ids:
