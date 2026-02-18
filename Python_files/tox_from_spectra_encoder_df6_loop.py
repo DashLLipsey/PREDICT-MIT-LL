@@ -10,8 +10,8 @@ import functions_enc as f
 import function_depot as fd
 
 ### USER SETTINGS
-dataset_name = 'bin1_thresh0_05_df_spectra'  # 'bin1_thresh0_05_df_spectra'
-num_loops = 5
+dataset_name = 'bin1_thresh0_5_df_spectra'  # 'bin1_thresh0_05_df_spectra'
+num_loops = 25
 
 VAL_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop"
 SUPER_DIR = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop_super_test"
@@ -114,26 +114,33 @@ for loop_counter in range(num_loops):
     real_data = filtered_dataset[real_mask].copy()
 
     # ===================================================================
-    # TRAIN-TEST SPLIT: SMILES × CE_clean stratified split
-    # For each SMILES, splits each CE_clean level evenly between train/test
-    # Extras go to training. Ensures balanced representation of both SMILES
-    # and collision energies across train/test sets. NaN/Unknown CE values
-    # are handled the same way (grouped and split).
+    # TRAIN-TEST SPLIT: SMILES-based 50/50 split
+    # Splits each SMILES group 50/50 between train and test
+    # ensuring no data leakage between sets
+    # Synthetic data is added to training set only
+    # CHANGE: Now balances CE_clean levels within each SMILES group #change
     # ===================================================================
-    train_indices = []
-    test_indices = []
-    
-    # Set random seed for reproducibility across loops
+    smiles_groups = real_data.groupby('SMILES_spectra')
+    train_indices, test_indices = [], []
     np.random.seed(loop_counter + 42)
-    
-    # Process real data: group by SMILES, then by CE_clean within each SMILES
-    for smiles, smiles_group in real_data.groupby('SMILES_spectra'):
-        for ce_level, ce_group in smiles_group.groupby('CE_clean'):
-            group_indices = ce_group.index.values
-            np.random.shuffle(group_indices)
-            split_point = len(group_indices) // 2
-            test_indices.extend(group_indices[:split_point])
-            train_indices.extend(group_indices[split_point:])  # extras go to train
+    for smiles, group in smiles_groups:
+        # CHANGE: Group by CE_clean level within this SMILES #change
+        ce_groups = group.groupby('CE_clean', dropna=False) #change
+        smiles_train_idx = [] #change
+        smiles_test_idx = [] #change
+        
+        for ce_level, ce_group in ce_groups: #change
+            idx = ce_group.index.values #change
+            n = len(idx) #change
+            np.random.shuffle(idx) #change
+            split = n // 2 #change
+            # CHANGE: Distribute this CE_clean level evenly between train/test #change
+            smiles_test_idx.extend(idx[:split]) #change
+            smiles_train_idx.extend(idx[split:]) #change
+        
+        # CHANGE: Add this SMILES' indices to global lists #change
+        test_indices.extend(smiles_test_idx) #change
+        train_indices.extend(smiles_train_idx) #change
     
     # Add ALL synthetic to training, NOT to test
     train_indices.extend(synthetic_data.index.values)

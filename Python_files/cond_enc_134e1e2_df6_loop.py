@@ -15,7 +15,7 @@ import function_depot as fd
 bin_size = 1.0  # 1.0 and 0.1     
 threshold = 0.05  # 0.05 and 0.5
 dataset_name = 'bin1_thresh0_05_df_spectra'  # <-- must match parquet file in grid_search_folder
-num_loops = 3      # how many repeated train/val splits & models
+num_loops = 25      # how many repeated train/val splits & models
 
 # --- Output folders ---
 VAL_INT_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_cond_enc_134_loop_intermediate"
@@ -68,20 +68,20 @@ super_test_smiles = [
 #### ==== Model params ==== ####
 embedding_num_layers = 6
 embedding_batch_size = 256
-embedding_epochs = 500
+embedding_epochs = 300
 embedding_lr = 0.0001
 lambda1 = 5
-lambda3 = 1
+lambda3 = 3
 lambda4 = 3
-dropout1 = 0.5
+dropout1 = 0.35
 
 input_length=4608
 tox_num_layers = 4
 tox_batch_size = 256
-tox_epochs = 500
+tox_epochs = 250
 tox_lr = 0.0001
 tox_num_classes = 5
-dropout2 = 0.5
+dropout2 = 0.35
 
 layer1_size = 1000
 layer2_size = 250
@@ -112,33 +112,23 @@ orig_dataset = pd.DataFrame(orig_dataset) if not isinstance(orig_dataset, pd.Dat
 # --- Identify synthetic spectra (individual index_ids) ---
 synthetic_index_ids = set([idx for idx, syn in id_to_synthetic.items() if syn==1])
 print(f"Identified {len(synthetic_index_ids)} synthetic spectra (by index_id)")
-# Keep all SMILES - we'll filter synthetic spectra at the dataframe level
 
 for loop_counter in range(num_loops):
     print(f'\n========== LOOP {loop_counter+1}/{num_loops} ==========')
 
     # SPLIT, FILTER, MAP GROUP/CLEAN (re-randomize every loop!)
     dataset = orig_dataset.copy()
+    
     # Exclude super test SMILES from training/validation
     dataset_no_super_test = dataset[~dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
+    
+    # Map Group and CE_clean
     if 'Group' not in dataset_no_super_test.columns:
         dataset_no_super_test['Group'] = dataset_no_super_test['index_id'].map(id_to_group).fillna('Unknown')
     if 'CE_clean' not in dataset_no_super_test.columns:
         dataset_no_super_test['CE_clean'] = dataset_no_super_test['index_id'].map(id_to_ce_clean).fillna('Unknown')
     
-    # # === OPTION 1: Filter SMILES based on real spectra only (RECOMMENDED) ===
-    # # Commment out to switch to not removing SMILES.
-    # # Separate synthetic first, BEFORE filtering for valid SMILES
-    # synthetic_mask_temp = dataset_no_super_test['index_id'].map(lambda idx: id_to_synthetic.get(idx, 0)==1)
-    # real_data_temp = dataset_no_super_test[~synthetic_mask_temp].copy()
-    # # Count only REAL spectra per SMILES
-    # counts = real_data_temp['SMILES_spectra'].value_counts()
-    # valid_smiles = counts[counts >= 4].index
-    # # Now filter the full dataset (real + synthetic) to those SMILES
-    # filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
-    
-    # === OPTION 2: Filter SMILES based on total count (real + synthetic) ===
-    # Comment out to switch to option 1
+    # Filter SMILES based on total count (real + synthetic)
     counts = dataset_no_super_test['SMILES_spectra'].value_counts()
     valid_smiles = counts[counts >= 4].index
     filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
@@ -152,24 +142,33 @@ for loop_counter in range(num_loops):
     real_data = filtered_dataset[real_mask].copy()
 
     # ===================================================================
-    # TRAIN-TEST SPLIT: SMILES-based alternating assignment
-    # Sorts SMILES by spectra count (ascending) and alternates assignment
-    # to ensure balanced set sizes while keeping all spectra for each
-    # SMILES together (no data leakage between train/test)
+    # TRAIN-TEST SPLIT: SMILES-based 50/50 split (with CE_clean balancing)
+    # Splits each SMILES group 50/50 between train and test
+    # ensuring no data leakage between sets
+    # Synthetic data is added to training set only
+    # Balances CE_clean levels within each SMILES group
     # ===================================================================
-    # Count spectra per SMILES and sort in ascending order
-    smiles_counts = real_data['SMILES_spectra'].value_counts().sort_values(ascending=True)
-    
-    train_indices = []
-    test_indices = []
-    
-    # Alternate assignment: first SMILES to train, second to test, etc.
-    for i, smiles in enumerate(smiles_counts.index):
-        smiles_indices = real_data[real_data['SMILES_spectra'] == smiles].index.values
-        if i % 2 == 0:  # Even index -> train
-            train_indices.extend(smiles_indices)
-        else:  # Odd index -> test
-            test_indices.extend(smiles_indices)
+    smiles_groups = real_data.groupby('SMILES_spectra')
+    train_indices, test_indices = [], []
+    np.random.seed(loop_counter + 42)
+    for smiles, group in smiles_groups:
+        # Group by CE_clean level within this SMILES
+        ce_groups = group.groupby('CE_clean', dropna=False)
+        smiles_train_idx = []
+        smiles_test_idx = []
+        
+        for ce_level, ce_group in ce_groups:
+            idx = ce_group.index.values
+            n = len(idx)
+            np.random.shuffle(idx)
+            split = n // 2
+            # Distribute this CE_clean level evenly between train/test
+            smiles_test_idx.extend(idx[:split])
+            smiles_train_idx.extend(idx[split:])
+        
+        # Add this SMILES' indices to global lists
+        test_indices.extend(smiles_test_idx)
+        train_indices.extend(smiles_train_idx)
     
     # Add ALL synthetic to training, NOT to test
     train_indices.extend(synthetic_data.index.values)
@@ -188,6 +187,7 @@ for loop_counter in range(num_loops):
     test_data_processed = fd.add_tox_levels(test_data_processed)
     # Add 'index' column for the tensor function, but use index_id values
     test_data_processed['index'] = test_data_processed['index_id']
+
 
     # ==== STEP 1: EMBEDDING ====
     x_train_with_ext, y_train_emb, y_train_morgan, y_train_filtered_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_134e1e2(

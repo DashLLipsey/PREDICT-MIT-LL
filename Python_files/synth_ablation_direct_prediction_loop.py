@@ -10,8 +10,8 @@ import functions_enc as f
 import function_depot as fd
 
 ### USER SETTINGS
-dataset_name = 'bin1_thresh0_05_df_spectra'  # 'bin1_thresh0_05_df_spectra'
-num_loops = 5
+dataset_name = 'bin1_thresh0_5_df_spectra'  # 'bin1_thresh0_05_df_spectra'
+num_loops = 25
 
 VAL_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_synth_abl_loop"
 SUPER_DIR = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_synth_abl_loop_super_test"
@@ -112,25 +112,33 @@ for loop_counter in range(num_loops):
     filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
 
     # ===================================================================
-    # TRAIN-TEST SPLIT: SMILES-based alternating assignment
-    # Sorts SMILES by spectra count (ascending) and alternates assignment
-    # to ensure balanced set sizes while keeping all spectra for each
-    # SMILES together (no data leakage between train/test)
+    # TRAIN-TEST SPLIT: SMILES-based 50/50 split (with extras to train)
+    # Splits each SMILES group 50/50 between train and test
+    # ensuring no data leakage between sets
     # Note: Synthetic data already removed in ablation study
+    # CHANGE: Now balances CE_clean levels within each SMILES group #change
     # ===================================================================
-    # Count spectra per SMILES and sort in ascending order
-    smiles_counts = filtered_dataset['SMILES_spectra'].value_counts().sort_values(ascending=True)
-    
-    train_indices = []
-    test_indices = []
-    
-    # Alternate assignment: first SMILES to train, second to test, etc.
-    for i, smiles in enumerate(smiles_counts.index):
-        smiles_indices = filtered_dataset[filtered_dataset['SMILES_spectra'] == smiles].index.values
-        if i % 2 == 0:  # Even index -> train
-            train_indices.extend(smiles_indices)
-        else:  # Odd index -> test
-            test_indices.extend(smiles_indices)
+    smiles_groups = filtered_dataset.groupby('SMILES_spectra')
+    train_indices, test_indices = [], []
+    np.random.seed(loop_counter + 42)
+    for smiles, group in smiles_groups:
+        # CHANGE: Group by CE_clean level within this SMILES #change
+        ce_groups = group.groupby('CE_clean', dropna=False) #change
+        smiles_train_idx = [] #change
+        smiles_test_idx = [] #change
+        
+        for ce_level, ce_group in ce_groups: #change
+            idx = ce_group.index.values #change
+            n = len(idx) #change
+            np.random.shuffle(idx) #change
+            split = n // 2 #change
+            # CHANGE: Distribute this CE_clean level evenly between train/test #change
+            smiles_test_idx.extend(idx[:split]) #change
+            smiles_train_idx.extend(idx[split:]) #change
+        
+        # CHANGE: Add this SMILES' indices to global lists #change
+        test_indices.extend(smiles_test_idx) #change
+        train_indices.extend(smiles_train_idx) #change
     
     train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
     test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
