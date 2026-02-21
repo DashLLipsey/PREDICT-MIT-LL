@@ -1729,18 +1729,20 @@ def pre_filter_spectrum_by_mz_range(df, spectrum_col, min_mz=0, max_mz=1000):
     
     return df_filtered
 
-
-# Old version without min_mz and max_mz filtering
+# This version assumed index_id is already created and preserves it
 def spectrum_string_to_dataframe(df, spectrum_col, smiles_col):
     """
     Converts a DataFrame with a spectrum column (string of 'x:y' pairs) into a matrix
     where columns are unique x values, rows are spectra (even for duplicate SMILES), and values are y (intensity).
-    Creates and preserves an index_id column for tracking. All spectral columns will be float type with float values.
+    Preserves existing index_id column for tracking. All spectral columns will be float type with float values.
     Spectral columns are sorted by their float values in ascending order.
     """
-    # Create a copy of the input DataFrame and add index_id
+    # Create a copy of the input DataFrame
     df_copy = df.copy()
-    df_copy['index_id'] = range(len(df_copy))
+    
+    # Check if index_id column exists, if not create it
+    if 'index_id' not in df_copy.columns:
+        df_copy['index_id'] = range(len(df_copy))
     
     # Collect all unique x values (m/z) and convert to float
     x_values_set = set()
@@ -1761,11 +1763,11 @@ def spectrum_string_to_dataframe(df, spectrum_col, smiles_col):
             except Exception:
                 continue
         
-        # Store row data including index_id
+        # Store row data including existing index_id
         data_rows.append({
             'original_index': idx,
             smiles_col: row[smiles_col],
-            'index_id': row['index_id'],
+            'index_id': row['index_id'],  # Use existing index_id
             'xy_dict': xy_dict
         })
     
@@ -1782,7 +1784,7 @@ def spectrum_string_to_dataframe(df, spectrum_col, smiles_col):
     for x_val in x_values:
         result_data[x_val] = [float(row['xy_dict'].get(x_val, 0.0)) for row in data_rows]
     
-    # Add index_id column last
+    # Add existing index_id column last
     result_data['index_id'] = [row['index_id'] for row in data_rows]
     
     # Create DataFrame - columns will be in the order we added them
@@ -1793,6 +1795,69 @@ def spectrum_string_to_dataframe(df, spectrum_col, smiles_col):
     df_matrix.index = original_indices
     
     return df_matrix
+# # Old version without min_mz and max_mz filtering also it makes index_id
+# def spectrum_string_to_dataframe(df, spectrum_col, smiles_col):
+#     """
+#     Converts a DataFrame with a spectrum column (string of 'x:y' pairs) into a matrix
+#     where columns are unique x values, rows are spectra (even for duplicate SMILES), and values are y (intensity).
+#     Creates and preserves an index_id column for tracking. All spectral columns will be float type with float values.
+#     Spectral columns are sorted by their float values in ascending order.
+#     """
+#     # Create a copy of the input DataFrame and add index_id
+#     df_copy = df.copy()
+#     df_copy['index_id'] = range(len(df_copy))
+    
+#     # Collect all unique x values (m/z) and convert to float
+#     x_values_set = set()
+#     data_rows = []
+    
+#     for idx, row in df_copy.iterrows():
+#         spectrum = row[spectrum_col]
+#         pairs = spectrum.split()
+#         xy_dict = {}
+        
+#         for pair in pairs:
+#             try:
+#                 x, y = pair.split(":") # Split into x and y
+#                 x_float = float(x)
+#                 y_float = float(y)
+#                 xy_dict[x_float] = y_float
+#                 x_values_set.add(x_float)
+#             except Exception:
+#                 continue
+        
+#         # Store row data including index_id
+#         data_rows.append({
+#             'original_index': idx,
+#             smiles_col: row[smiles_col],
+#             'index_id': row['index_id'],
+#             'xy_dict': xy_dict
+#         })
+    
+#     # Sort x values by their float values in ascending order
+#     x_values = sorted(x_values_set)
+    
+#     # Build the result DataFrame with columns in sorted order
+#     result_data = {}
+    
+#     # Add SMILES column first
+#     result_data[smiles_col] = [row[smiles_col] for row in data_rows]
+    
+#     # Add spectral columns in sorted order
+#     for x_val in x_values:
+#         result_data[x_val] = [float(row['xy_dict'].get(x_val, 0.0)) for row in data_rows]
+    
+#     # Add index_id column last
+#     result_data['index_id'] = [row['index_id'] for row in data_rows]
+    
+#     # Create DataFrame - columns will be in the order we added them
+#     df_matrix = pd.DataFrame(result_data)
+    
+#     # Set the index to match original DataFrame
+#     original_indices = [row['original_index'] for row in data_rows]
+#     df_matrix.index = original_indices
+    
+#     return df_matrix
 
 # Cate's smiles to ChemNet embedding code
 def get_chemnet_emb_from_smiles(smiles_list):
