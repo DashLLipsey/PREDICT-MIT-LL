@@ -18,29 +18,83 @@ SUPER_DIR = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop_su
 os.makedirs(VAL_DIR, exist_ok=True)
 os.makedirs(SUPER_DIR, exist_ok=True)
 
-# Super test SMILES (copy full list from your code)
+# New Super Test SMILES list
 super_test_smiles = [
-    'COC(=O)C=C(C)OP(=O)(OC)OC',
-    'COc1cc2c(c3oc(=O)c4c(c13)CCC4=O)[C@@H]1C=CO[C@@H]1O2',
-    'CC(=O)OC1(C)CC(C)C(=O)C(C(O)CC2CC(=O)NC(=O)C2)C1',
-    'C[C@H]1O[C@@H](O[C@H]2[C@@H](O)C[C@H](O[C@H]3[C@@H](O)C[C@H](O[C@H]4CC[C@@]5(C)[C@H](CC[C@@H]6[C@@H]5C[C@@H](O)[C@]5(C)[C@@H](C7=CC(=O)OC7)CC[C@]65O)C4)O[C@@H]3C)O[C@@H]2C)C[C@H](O)[C@@H]1O',
-    'CNC(=O)Oc1cc(C)cc(C(C)C)c1',
-    'CNC(=O)Oc1ccc(N(C)C)c(C)c1',
+    'CCOP(=S)(OCC)Oc1ccc([N+](=O)[O-])cc1',
+    'CCOP(=S)(OCC)Oc1ccc(S(C)=O)cc1',
+    'CC1(C)O[C@@H]2C[C@H]3[C@@H]4C[C@H](F)C5=CC(=O)C=C[C@]5(C)[C@H]4[C@@H](O)C[C@]3(C)[C@]2(C(=O)CO)O1 CC(=O)OC1(C)CC(C)C(=O)C(C(O)CC2CC(=O)NC(=O)C2)C1',
+    'NC(=S)Nc1ccccc1',
+    'CC(=O)OC[C@]12C[C@H](OC(=O)CC(C)C)C(C)=C[C@H]1O[C@@H]1[C@H](O)[C@@H](OC(C)=O)[C@@]2(C)[C@]12CO2',
+    # Optional (Level 0 that would get filtered out)
+    'CC(C)OC(=O)CCCC=CCC1C(O)CC(O)C1CCC(O)CCc1ccccc1',
+    'Cc1cc(C(C)(C)C)c(O)c(C)c1CC1=NCCN1.Cl',
+    'CCOP(=O)(OCC)Oc1ccc([N+](=O)[O-])cc1',
+    'CCN1CC2(COC)C(OC(C)=O)CC(OC)C34C5CC6(O)C(OC)C(O)C(OC(C)=O)(C5C6OC(=O)c5ccccc5)C(C(OC)C23)C14',
+    # Level 1
+    'CCOP(=O)(OCC)OC(=CCl)c1ccc(Cl)cc1Cl',
+    'CCC(=O)N(c1ccccc1)C1CCN(CCc2ccccc2)CC1',
+    'CNC(=O)Oc1ccccc1C1OCCO1',
+    'O=C1C=C2C(=CCOC2O)O1',
+    'CC(=O)C1=C(O)[C@@H]2[C@H]3c4c[nH]c5cccc(c45)C[C@H]3C(C)(C)N2C1=O',
+    'Cc1cc(OC(=O)N(C)C)nn1C(=O)N(C)C',
     'C[C@@H]1Cc2c(Cl)cc(C(=O)N[C@@H](Cc3ccccc3)C(=O)O)c(O)c2C(=O)O1',
-    'COc1ccc2c(c1)c(CC(=O)OCC(=O)O)c(C)n2C(=O)c1ccc(Cl)cc1',
-    'CC(C)(C)CC(C)(C)c1ccc(OCCOCC[N+](C)(C)Cc2ccccc2)cc1',
-    'CC(=O)N1CCN(c2ccc(OC[C@H]3CO[C@](Cn4ccnc4)(c4ccc(Cl)cc4Cl)O3)cc2)CC1',
-    'c1ccc(C2CN3CCSC3=N2)cc1',
-    'CN(C)CCC=C1c2ccccc2CCc2ccccc21',
+    'CNC(=O)Oc1cccc2c1OC(C)(C)O2',
+    'CC(N)Cc1ccccc1',
+    'CC1OC(OC2C(O)CC(OC3C(O)CC(OC4CCC5(C)C(CCC6C5CCC5(C)C(C7=CC(=O)OC7)CCC65O)C4)OC3C)OC2C)CC(O)C1O',
+    # Optional (Level 1 that would get filtered out)
+    'CC(=O)C1(O)Cc2c(O)c3c(c(O)c2C(OC2CC(N)C(O)C(C)O2)C1)C(=O)c1ccccc1C3=O',
+    'CN1C(C(=O)Nc2ccccn2)=C(O)c2sc(Cl)cc2S1(=O)=O',
+    'C=C1CCC(O)CC1=CC=C1CCCC2(C)C1CCC2C(C)C=CC(C)C(C)C',
+    'CC(=O)OCC(=O)[C@@]12OC(C)(C)O[C@@H]1C[C@H]1[C@@H]3C[C@H](F)C4=CC(=O)C=C[C@]4(C)[C@@]3(F)[C@@H](O)C[C@@]12C',
+    'C[C@H]1O[C@@H](O[C@H]2[C@@H](O)C[C@H](O[C@H]3[C@@H](O)C[C@H](O[C@H]4CC[C@@]5(C)[C@H](CC[C@@H]6[C@@H]5CC[C@]5(C)[C@@H](C7=CC(=O)OC7)CC[C@]65O)C4)O[C@@H]3C)O[C@@H]2C)C[C@H](O)[C@@H]1O',
+    'COP(=S)(OC)Oc1ccc(S(=O)(=O)N(C)C)cc1',
+    # Level 2
+    'COP(=S)(OC)SCN1C(=O)c2ccccc2C1=O',
+    'CCOC(=O)C1(c2ccccc2)CCN(C)CC1',
     'CCOP(=S)(OCC)Oc1ccc2c(C)c(Cl)c(=O)oc2c1',
-    'CC(C)NCC(O)COc1cccc2ccccc12',
-    'CCOC(=O)C(C)(C)Oc1ccc(Cl)cc1',
-    'CCN(CC)CCNC(=O)c1cc(Cl)c(N)cc1OC',
-    'COc1ccc2c(c1OC)C(=O)OC2C1c2cc3c(cc2CCN1C)OCO3',
-    'CN(C)c1ccc(SC#N)cc1',
-    'CC(C)[C@H](N)C(=O)O',
-    'CCCCOC(=O)COC(=O)c1ccccc1C(=O)OCCCC',
-    'NC(C(=O)O)c1ccccc1'
+    'CC(C(=O)O)c1cccc(C(=O)c2ccccc2)c1',
+    'S=c1[nH]c2ccccc2s1',
+    'CC(=O)N1CCN(c2ccc(OC[C@H]3CO[C@](Cn4ccnc4)(c4ccc(Cl)cc4Cl)O3)cc2)CC1',
+    'CN(N=O)c1ccccc1',
+    'CN1C(=O)CN=C(c2ccccc2)c2cc(Cl)ccc21',
+    'COc1cc2ccc(=O)oc2cc1OC',
+    'CN1CCCC(n2nc(Cc3ccc(Cl)cc3)c3ccccc3c2=O)CC1',
+    'CNC[C@H](O)c1cccc(O)c1',
+    'C1ccc2ncccc2c1',
+    'CN1C(=O)CN=C(c2ccccc2F)c2cc([N+](=O)[O-])ccc21',
+    'Cn1cnc([N+](=O)[O-])c1Sc1ncnc2nc[nH]c12',
+    # Level 3
+    'C=CCOC(Cn1ccnc1)c1ccc(Cl)cc1Cl',
+    'COc1ccnc(CS(=O)c2nc3ccc(OC(F)F)cc3[nH]2)c1OC',
+    'CCC(=O)Nc1ccc(Cl)c(Cl)c1',
+    'C1CCN2C[C@@H]3C[C@@H](CN4CCCC[C@@H]34)[C@H]2C1',
+    'CC(=O)CCCCn1c(=O)c2c(ncn2C)n(C)c1=O',
+    'COc1ccc(N)cc1',
+    'Cc1ccc(C(C)C)cc2c(C)ccc1-2',
+    'Clc1ccc(C2(Cn3cncn3)CC(Br)CO2)c(Cl)c1',
+    'CC(CCc1ccccc1)NCC(O)c1ccc(O)c(C(N)=O)c1',
+    'CC1COC(Cn2cncn2)(c2ccc(Oc3ccc(Cl)cc3)cc2Cl)O1',
+    'Cc1ccc(S(N)(=O)=O)cc1',
+    'Cc1cc(=O)nc(C(C)C)[nH]1',
+    'N[C@@H](CC(=O)N1CCn2c(nnc2C(F)(F)F)C1)Cc1cc(F)c(F)cc1F',
+    'COc1cc(C=CC(=O)CC(=O)C=Cc2ccc(O)c(OC)c2)ccc1O',
+    'Cc1cc(C)nc(Nc2ccccc2)n1',
+    'COC(=O)Nc1nc2ccccc2[nH]1',
+    'CCOC(=O)NCCOc1ccc(Oc2ccccc2)cc1',
+    'COc1cc2ccc(=O)oc2cc1O',
+    # Level 4
+    'Cc1ncc(COP(=O)(O)O)c(C=O)c1O',
+    'OCCN(CCO)CCO',
+    'O=C(O)c1cccnc1',
+    'C[C@@H]1CC[C@@]2(OC1)O[C@H]1C[C@H]3[C@@H]4CC=C5C[C@@H](O)CC[C@]5(C)[C@H]4CC[C@]3(C)[C@H]1[C@@H]2C',
+    'Oc1cc(O)c2c(c1)O[C@H](c1ccc(O)c(O)c1)[C@@H](O)C2',
+    'O=c1[nH]c2c(c(=O)n1C1CCCCC1)CCC2',
+    'NC(CCC(=O)O)C(=O)O',
+    'N[C@@H](Cc1cnc[nH]1)C(=O)O',
+    'COc1ccc(Cl)cc1C(=O)NCCc1ccc(S(=O)(=O)NC(=O)NC2CCCCC2)cc1',
+    'CCCCC(CC)COC(=O)c1ccccc1C(=O)OCC(CC)CCCC',
+    'CCCCOC(=O)CC(CC(=O)OCCCC)(OC(C)=O)C(=O)OCCC',
+    'c1ccc(Nc2ccc3ccccc3c2)cc1'
 ]
 
 def parse_dataset_name(dataset_name):
@@ -103,7 +157,7 @@ for loop_counter in range(num_loops):
     if 'CE_clean' not in dataset_no_super_test.columns:
         dataset_no_super_test['CE_clean'] = dataset_no_super_test['index_id'].map(id_to_ce_clean).fillna('Unknown')
     counts = dataset_no_super_test['SMILES_spectra'].value_counts()
-    valid_smiles = counts[counts >= 4].index
+    valid_smiles = counts[counts >= 3].index
     filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
 
     # === Synthetic-awareness in splitting ===

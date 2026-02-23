@@ -2324,7 +2324,6 @@ def binning_loop(df_spectra, df_original, bin_sizes, thresholds, save_directory,
                 continue
 
     print(f"Created {len(bin_sizes)} thresh0 datasets!")
-    print(f"Total datasets created: {len(created_datasets)}")
     
     # Final cleanup
     del df_spectra_original
