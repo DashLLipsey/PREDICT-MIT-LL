@@ -52,7 +52,6 @@ super_test_smiles = [
     'Cc1cc(C(C)(C)C)c(O)c(C)c1CC1=NCCN1.Cl',
     'CCOP(=O)(OCC)Oc1ccc([N+](=O)[O-])cc1',
     'CCN1CC2(COC)C(OC(C)=O)CC(OC)C34C5CC6(O)C(OC)C(O)C(OC(C)=O)(C5C6OC(=O)c5ccccc5)C(C(OC)C23)C14',
-    
     # Level 1
     'CCOP(=O)(OCC)OC(=CCl)c1ccc(Cl)cc1Cl',
     'CCC(=O)N(c1ccccc1)C1CCN(CCc2ccccc2)CC1',
@@ -71,7 +70,6 @@ super_test_smiles = [
     'CC(=O)OCC(=O)[C@@]12OC(C)(C)O[C@@H]1C[C@H]1[C@@H]3C[C@H](F)C4=CC(=O)C=C[C@]4(C)[C@@]3(F)[C@@H](O)C[C@@]12C',
     'C[C@H]1O[C@@H](O[C@H]2[C@@H](O)C[C@H](O[C@H]3[C@@H](O)C[C@H](O[C@H]4CC[C@@]5(C)[C@H](CC[C@@H]6[C@@H]5CC[C@]5(C)[C@@H](C7=CC(=O)OC7)CC[C@]65O)C4)O[C@@H]3C)O[C@@H]2C)C[C@H](O)[C@@H]1O',
     'COP(=S)(OC)Oc1ccc(S(=O)(=O)N(C)C)cc1',
-    
     # Level 2
     'COP(=S)(OC)SCN1C(=O)c2ccccc2C1=O',
     'CCOC(=O)C1(c2ccccc2)CCN(C)CC1',
