@@ -36,114 +36,114 @@ merged_EI_MSMS_spectra = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_da
 grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/merged_EI_msms_dataframes"
 dataset_path = os.path.join(grid_search_folder, f"{dataset_name}.parquet")
 
-# New Super Test SMILES list
-super_test_smiles = [
-    'CCOP(=S)(OCC)Oc1ccc([N+](=O)[O-])cc1',
-    'CCOP(=S)(OCC)Oc1ccc(S(C)=O)cc1',
-    'CC1(C)O[C@@H]2C[C@H]3[C@@H]4C[C@H](F)C5=CC(=O)C=C[C@]5(C)[C@H]4[C@@H](O)C[C@]3(C)[C@]2(C(=O)CO)O1 CC(=O)OC1(C)CC(C)C(=O)C(C(O)CC2CC(=O)NC(=O)C2)C1',
-    'NC(=S)Nc1ccccc1',
-    'CC(=O)OC[C@]12C[C@H](OC(=O)CC(C)C)C(C)=C[C@H]1O[C@@H]1[C@H](O)[C@@H](OC(C)=O)[C@@]2(C)[C@]12CO2',
-    # Optional (Level 0 that would get filtered out)
-    'CC(C)OC(=O)CCCC=CCC1C(O)CC(O)C1CCC(O)CCc1ccccc1',
-    'Cc1cc(C(C)(C)C)c(O)c(C)c1CC1=NCCN1.Cl',
-    'CCOP(=O)(OCC)Oc1ccc([N+](=O)[O-])cc1',
-    'CCN1CC2(COC)C(OC(C)=O)CC(OC)C34C5CC6(O)C(OC)C(O)C(OC(C)=O)(C5C6OC(=O)c5ccccc5)C(C(OC)C23)C14',
-    # Level 1
-    'CCOP(=O)(OCC)OC(=CCl)c1ccc(Cl)cc1Cl',
-    'CCC(=O)N(c1ccccc1)C1CCN(CCc2ccccc2)CC1',
-    'CNC(=O)Oc1ccccc1C1OCCO1',
-    'O=C1C=C2C(=CCOC2O)O1',
-    'CC(=O)C1=C(O)[C@@H]2[C@H]3c4c[nH]c5cccc(c45)C[C@H]3C(C)(C)N2C1=O',
-    'Cc1cc(OC(=O)N(C)C)nn1C(=O)N(C)C',
-    'C[C@@H]1Cc2c(Cl)cc(C(=O)N[C@@H](Cc3ccccc3)C(=O)O)c(O)c2C(=O)O1',
-    'CNC(=O)Oc1cccc2c1OC(C)(C)O2',
-    'CC(N)Cc1ccccc1',
-    'CC1OC(OC2C(O)CC(OC3C(O)CC(OC4CCC5(C)C(CCC6C5CCC5(C)C(C7=CC(=O)OC7)CCC65O)C4)OC3C)OC2C)CC(O)C1O',
-    # Optional (Level 1 that would get filtered out)
-    'CC(=O)C1(O)Cc2c(O)c3c(c(O)c2C(OC2CC(N)C(O)C(C)O2)C1)C(=O)c1ccccc1C3=O',
-    'CN1C(C(=O)Nc2ccccn2)=C(O)c2sc(Cl)cc2S1(=O)=O',
-    'C=C1CCC(O)CC1=CC=C1CCCC2(C)C1CCC2C(C)C=CC(C)C(C)C',
-    'CC(=O)OCC(=O)[C@@]12OC(C)(C)O[C@@H]1C[C@H]1[C@@H]3C[C@H](F)C4=CC(=O)C=C[C@]4(C)[C@@]3(F)[C@@H](O)C[C@@]12C',
-    'C[C@H]1O[C@@H](O[C@H]2[C@@H](O)C[C@H](O[C@H]3[C@@H](O)C[C@H](O[C@H]4CC[C@@]5(C)[C@H](CC[C@@H]6[C@@H]5CC[C@]5(C)[C@@H](C7=CC(=O)OC7)CC[C@]65O)C4)O[C@@H]3C)O[C@@H]2C)C[C@H](O)[C@@H]1O',
-    'COP(=S)(OC)Oc1ccc(S(=O)(=O)N(C)C)cc1',
-    # Level 2
-    'COP(=S)(OC)SCN1C(=O)c2ccccc2C1=O',
-    'CCOC(=O)C1(c2ccccc2)CCN(C)CC1',
-    'CCOP(=S)(OCC)Oc1ccc2c(C)c(Cl)c(=O)oc2c1',
-    'CC(C(=O)O)c1cccc(C(=O)c2ccccc2)c1',
-    'S=c1[nH]c2ccccc2s1',
-    'CC(=O)N1CCN(c2ccc(OC[C@H]3CO[C@](Cn4ccnc4)(c4ccc(Cl)cc4Cl)O3)cc2)CC1',
-    'CN(N=O)c1ccccc1',
-    'CN1C(=O)CN=C(c2ccccc2)c2cc(Cl)ccc21',
-    'COc1cc2ccc(=O)oc2cc1OC',
-    'CN1CCCC(n2nc(Cc3ccc(Cl)cc3)c3ccccc3c2=O)CC1',
-    'CNC[C@H](O)c1cccc(O)c1',
-    'C1ccc2ncccc2c1',
-    'CN1C(=O)CN=C(c2ccccc2F)c2cc([N+](=O)[O-])ccc21',
-    'Cn1cnc([N+](=O)[O-])c1Sc1ncnc2nc[nH]c12',
-    # Level 3
-    'C=CCOC(Cn1ccnc1)c1ccc(Cl)cc1Cl',
-    'COc1ccnc(CS(=O)c2nc3ccc(OC(F)F)cc3[nH]2)c1OC',
-    'CCC(=O)Nc1ccc(Cl)c(Cl)c1',
-    'C1CCN2C[C@@H]3C[C@@H](CN4CCCC[C@@H]34)[C@H]2C1',
-    'CC(=O)CCCCn1c(=O)c2c(ncn2C)n(C)c1=O',
-    'COc1ccc(N)cc1',
-    'Cc1ccc(C(C)C)cc2c(C)ccc1-2',
-    'Clc1ccc(C2(Cn3cncn3)CC(Br)CO2)c(Cl)c1',
-    'CC(CCc1ccccc1)NCC(O)c1ccc(O)c(C(N)=O)c1',
-    'CC1COC(Cn2cncn2)(c2ccc(Oc3ccc(Cl)cc3)cc2Cl)O1',
-    'Cc1ccc(S(N)(=O)=O)cc1',
-    'Cc1cc(=O)nc(C(C)C)[nH]1',
-    'N[C@@H](CC(=O)N1CCn2c(nnc2C(F)(F)F)C1)Cc1cc(F)c(F)cc1F',
-    'COc1cc(C=CC(=O)CC(=O)C=Cc2ccc(O)c(OC)c2)ccc1O',
-    'Cc1cc(C)nc(Nc2ccccc2)n1',
-    'COC(=O)Nc1nc2ccccc2[nH]1',
-    'CCOC(=O)NCCOc1ccc(Oc2ccccc2)cc1',
-    'COc1cc2ccc(=O)oc2cc1O',
-    # Level 4
-    'Cc1ncc(COP(=O)(O)O)c(C=O)c1O',
-    'OCCN(CCO)CCO',
-    'O=C(O)c1cccnc1',
-    'C[C@@H]1CC[C@@]2(OC1)O[C@H]1C[C@H]3[C@@H]4CC=C5C[C@@H](O)CC[C@]5(C)[C@H]4CC[C@]3(C)[C@H]1[C@@H]2C',
-    'Oc1cc(O)c2c(c1)O[C@H](c1ccc(O)c(O)c1)[C@@H](O)C2',
-    'O=c1[nH]c2c(c(=O)n1C1CCCCC1)CCC2',
-    'NC(CCC(=O)O)C(=O)O',
-    'N[C@@H](Cc1cnc[nH]1)C(=O)O',
-    'COc1ccc(Cl)cc1C(=O)NCCc1ccc(S(=O)(=O)NC(=O)NC2CCCCC2)cc1',
-    'CCCCC(CC)COC(=O)c1ccccc1C(=O)OCC(CC)CCCC',
-    'CCCCOC(=O)CC(CC(=O)OCCCC)(OC(C)=O)C(=O)OCCC',
-    'c1ccc(Nc2ccc3ccccc3c2)cc1'
-]
-
-# # Super test SMILES (original list)
+# # New Super Test SMILES list
 # super_test_smiles = [
+#     'CCOP(=S)(OCC)Oc1ccc([N+](=O)[O-])cc1',
+#     'CCOP(=S)(OCC)Oc1ccc(S(C)=O)cc1',
+#     'CC1(C)O[C@@H]2C[C@H]3[C@@H]4C[C@H](F)C5=CC(=O)C=C[C@]5(C)[C@H]4[C@@H](O)C[C@]3(C)[C@]2(C(=O)CO)O1 CC(=O)OC1(C)CC(C)C(=O)C(C(O)CC2CC(=O)NC(=O)C2)C1',
 #     'NC(=S)Nc1ccccc1',
-#     'COc1cc2c(c3oc(=O)c4c(c13)CCC4=O)[C@@H]1C=CO[C@@H]1O2',
-#     'CC(=O)OC1(C)CC(C)C(=O)C(C(O)CC2CC(=O)NC(=O)C2)C1',
-#     'C[C@H]1O[C@@H](O[C@H]2[C@@H](O)C[C@H](O[C@H]3[C@@H](O)C[C@H](O[C@H]4CC[C@@]5(C)[C@H](CC[C@@H]6[C@@H]5C[C@@H](O)[C@]5(C)[C@@H](C7=CC(=O)OC7)CC[C@]65O)C4)O[C@@H]3C)O[C@@H]2C)C[C@H](O)[C@@H]1O',
-#     'CNC(=O)Oc1cc(C)cc(C(C)C)c1',
-#     'CNC(=O)Oc1ccc(N(C)C)c(C)c1',
+#     'CC(=O)OC[C@]12C[C@H](OC(=O)CC(C)C)C(C)=C[C@H]1O[C@@H]1[C@H](O)[C@@H](OC(C)=O)[C@@]2(C)[C@]12CO2',
+#     # Optional (Level 0 that would get filtered out)
+#     'CC(C)OC(=O)CCCC=CCC1C(O)CC(O)C1CCC(O)CCc1ccccc1',
+#     'Cc1cc(C(C)(C)C)c(O)c(C)c1CC1=NCCN1.Cl',
+#     'CCOP(=O)(OCC)Oc1ccc([N+](=O)[O-])cc1',
+#     'CCN1CC2(COC)C(OC(C)=O)CC(OC)C34C5CC6(O)C(OC)C(O)C(OC(C)=O)(C5C6OC(=O)c5ccccc5)C(C(OC)C23)C14',
+#     # Level 1
+#     'CCOP(=O)(OCC)OC(=CCl)c1ccc(Cl)cc1Cl',
+#     'CCC(=O)N(c1ccccc1)C1CCN(CCc2ccccc2)CC1',
+#     'CNC(=O)Oc1ccccc1C1OCCO1',
+#     'O=C1C=C2C(=CCOC2O)O1',
+#     'CC(=O)C1=C(O)[C@@H]2[C@H]3c4c[nH]c5cccc(c45)C[C@H]3C(C)(C)N2C1=O',
+#     'Cc1cc(OC(=O)N(C)C)nn1C(=O)N(C)C',
 #     'C[C@@H]1Cc2c(Cl)cc(C(=O)N[C@@H](Cc3ccccc3)C(=O)O)c(O)c2C(=O)O1',
-#     'COc1ccc2c(c1)c(CC(=O)OCC(=O)O)c(C)n2C(=O)c1ccc(Cl)cc1',
-#     'CC(C)(C)CC(C)(C)c1ccc(OCCOCC[N+](C)(C)Cc2ccccc2)cc1',
-#     'CC(=O)N1CCN(c2ccc(OC[C@H]3CO[C@](Cn4ccnc4)(c4ccc(Cl)cc4Cl)O3)cc2)CC1',
-#     'c1ccc(C2CN3CCSC3=N2)cc1',
-#     'CN(C)CCC=C1c2ccccc2CCc2ccccc21',
+#     'CNC(=O)Oc1cccc2c1OC(C)(C)O2',
+#     'CC(N)Cc1ccccc1',
+#     'CC1OC(OC2C(O)CC(OC3C(O)CC(OC4CCC5(C)C(CCC6C5CCC5(C)C(C7=CC(=O)OC7)CCC65O)C4)OC3C)OC2C)CC(O)C1O',
+#     # Optional (Level 1 that would get filtered out)
+#     'CC(=O)C1(O)Cc2c(O)c3c(c(O)c2C(OC2CC(N)C(O)C(C)O2)C1)C(=O)c1ccccc1C3=O',
+#     'CN1C(C(=O)Nc2ccccn2)=C(O)c2sc(Cl)cc2S1(=O)=O',
+#     'C=C1CCC(O)CC1=CC=C1CCCC2(C)C1CCC2C(C)C=CC(C)C(C)C',
+#     'CC(=O)OCC(=O)[C@@]12OC(C)(C)O[C@@H]1C[C@H]1[C@@H]3C[C@H](F)C4=CC(=O)C=C[C@]4(C)[C@@]3(F)[C@@H](O)C[C@@]12C',
+#     'C[C@H]1O[C@@H](O[C@H]2[C@@H](O)C[C@H](O[C@H]3[C@@H](O)C[C@H](O[C@H]4CC[C@@]5(C)[C@H](CC[C@@H]6[C@@H]5CC[C@]5(C)[C@@H](C7=CC(=O)OC7)CC[C@]65O)C4)O[C@@H]3C)O[C@@H]2C)C[C@H](O)[C@@H]1O',
+#     'COP(=S)(OC)Oc1ccc(S(=O)(=O)N(C)C)cc1',
+#     # Level 2
+#     'COP(=S)(OC)SCN1C(=O)c2ccccc2C1=O',
+#     'CCOC(=O)C1(c2ccccc2)CCN(C)CC1',
 #     'CCOP(=S)(OCC)Oc1ccc2c(C)c(Cl)c(=O)oc2c1',
-#     'CC(C)NCC(O)COc1cccc2ccccc12',
-#     'CCOC(=O)C(C)(C)Oc1ccc(Cl)cc1',
-#     'CCN(CC)CCNC(=O)c1cc(Cl)c(N)cc1OC',
-#     'COc1ccc2c(c1OC)C(=O)OC2C1c2cc3c(cc2CCN1C)OCO3',
-#     'CN(C)c1ccc(SC#N)cc1',
-#     'CC(C)[C@H](N)C(=O)O',
-#     'CCCCOC(=O)COC(=O)c1ccccc1C(=O)OCCCC',
-#     'NC(C(=O)O)c1ccccc1'
+#     'CC(C(=O)O)c1cccc(C(=O)c2ccccc2)c1',
+#     'S=c1[nH]c2ccccc2s1',
+#     'CC(=O)N1CCN(c2ccc(OC[C@H]3CO[C@](Cn4ccnc4)(c4ccc(Cl)cc4Cl)O3)cc2)CC1',
+#     'CN(N=O)c1ccccc1',
+#     'CN1C(=O)CN=C(c2ccccc2)c2cc(Cl)ccc21',
+#     'COc1cc2ccc(=O)oc2cc1OC',
+#     'CN1CCCC(n2nc(Cc3ccc(Cl)cc3)c3ccccc3c2=O)CC1',
+#     'CNC[C@H](O)c1cccc(O)c1',
+#     'C1ccc2ncccc2c1',
+#     'CN1C(=O)CN=C(c2ccccc2F)c2cc([N+](=O)[O-])ccc21',
+#     'Cn1cnc([N+](=O)[O-])c1Sc1ncnc2nc[nH]c12',
+#     # Level 3
+#     'C=CCOC(Cn1ccnc1)c1ccc(Cl)cc1Cl',
+#     'COc1ccnc(CS(=O)c2nc3ccc(OC(F)F)cc3[nH]2)c1OC',
+#     'CCC(=O)Nc1ccc(Cl)c(Cl)c1',
+#     'C1CCN2C[C@@H]3C[C@@H](CN4CCCC[C@@H]34)[C@H]2C1',
+#     'CC(=O)CCCCn1c(=O)c2c(ncn2C)n(C)c1=O',
+#     'COc1ccc(N)cc1',
+#     'Cc1ccc(C(C)C)cc2c(C)ccc1-2',
+#     'Clc1ccc(C2(Cn3cncn3)CC(Br)CO2)c(Cl)c1',
+#     'CC(CCc1ccccc1)NCC(O)c1ccc(O)c(C(N)=O)c1',
+#     'CC1COC(Cn2cncn2)(c2ccc(Oc3ccc(Cl)cc3)cc2Cl)O1',
+#     'Cc1ccc(S(N)(=O)=O)cc1',
+#     'Cc1cc(=O)nc(C(C)C)[nH]1',
+#     'N[C@@H](CC(=O)N1CCn2c(nnc2C(F)(F)F)C1)Cc1cc(F)c(F)cc1F',
+#     'COc1cc(C=CC(=O)CC(=O)C=Cc2ccc(O)c(OC)c2)ccc1O',
+#     'Cc1cc(C)nc(Nc2ccccc2)n1',
+#     'COC(=O)Nc1nc2ccccc2[nH]1',
+#     'CCOC(=O)NCCOc1ccc(Oc2ccccc2)cc1',
+#     'COc1cc2ccc(=O)oc2cc1O',
+#     # Level 4
+#     'Cc1ncc(COP(=O)(O)O)c(C=O)c1O',
+#     'OCCN(CCO)CCO',
+#     'O=C(O)c1cccnc1',
+#     'C[C@@H]1CC[C@@]2(OC1)O[C@H]1C[C@H]3[C@@H]4CC=C5C[C@@H](O)CC[C@]5(C)[C@H]4CC[C@]3(C)[C@H]1[C@@H]2C',
+#     'Oc1cc(O)c2c(c1)O[C@H](c1ccc(O)c(O)c1)[C@@H](O)C2',
+#     'O=c1[nH]c2c(c(=O)n1C1CCCCC1)CCC2',
+#     'NC(CCC(=O)O)C(=O)O',
+#     'N[C@@H](Cc1cnc[nH]1)C(=O)O',
+#     'COc1ccc(Cl)cc1C(=O)NCCc1ccc(S(=O)(=O)NC(=O)NC2CCCCC2)cc1',
+#     'CCCCC(CC)COC(=O)c1ccccc1C(=O)OCC(CC)CCCC',
+#     'CCCCOC(=O)CC(CC(=O)OCCCC)(OC(C)=O)C(=O)OCCC',
+#     'c1ccc(Nc2ccc3ccccc3c2)cc1'
 # ]
+
+# Super test SMILES (original list)
+super_test_smiles = [
+    'NC(=S)Nc1ccccc1',
+    'COc1cc2c(c3oc(=O)c4c(c13)CCC4=O)[C@@H]1C=CO[C@@H]1O2',
+    'CC(=O)OC1(C)CC(C)C(=O)C(C(O)CC2CC(=O)NC(=O)C2)C1',
+    'C[C@H]1O[C@@H](O[C@H]2[C@@H](O)C[C@H](O[C@H]3[C@@H](O)C[C@H](O[C@H]4CC[C@@]5(C)[C@H](CC[C@@H]6[C@@H]5C[C@@H](O)[C@]5(C)[C@@H](C7=CC(=O)OC7)CC[C@]65O)C4)O[C@@H]3C)O[C@@H]2C)C[C@H](O)[C@@H]1O',
+    'CNC(=O)Oc1cc(C)cc(C(C)C)c1',
+    'CNC(=O)Oc1ccc(N(C)C)c(C)c1',
+    'C[C@@H]1Cc2c(Cl)cc(C(=O)N[C@@H](Cc3ccccc3)C(=O)O)c(O)c2C(=O)O1',
+    'COc1ccc2c(c1)c(CC(=O)OCC(=O)O)c(C)n2C(=O)c1ccc(Cl)cc1',
+    'CC(C)(C)CC(C)(C)c1ccc(OCCOCC[N+](C)(C)Cc2ccccc2)cc1',
+    'CC(=O)N1CCN(c2ccc(OC[C@H]3CO[C@](Cn4ccnc4)(c4ccc(Cl)cc4Cl)O3)cc2)CC1',
+    'c1ccc(C2CN3CCSC3=N2)cc1',
+    'CN(C)CCC=C1c2ccccc2CCc2ccccc21',
+    'CCOP(=S)(OCC)Oc1ccc2c(C)c(Cl)c(=O)oc2c1',
+    'CC(C)NCC(O)COc1cccc2ccccc12',
+    'CCOC(=O)C(C)(C)Oc1ccc(Cl)cc1',
+    'CCN(CC)CCNC(=O)c1cc(Cl)c(N)cc1OC',
+    'COc1ccc2c(c1OC)C(=O)OC2C1c2cc3c(cc2CCN1C)OCO3',
+    'CN(C)c1ccc(SC#N)cc1',
+    'CC(C)[C@H](N)C(=O)O',
+    'CCCCOC(=O)COC(=O)c1ccccc1C(=O)OCCCC',
+    'NC(C(=O)O)c1ccccc1'
+]
 
 #### ==== Model params ==== ####
 embedding_num_layers = 6
 embedding_batch_size = 256
-embedding_epochs = 300
+embedding_epochs = 500
 embedding_lr = 0.0001
 lambda1 = 15
 lambda3 = 5
@@ -190,6 +190,14 @@ print(f"Identified {len(synthetic_index_ids)} synthetic spectra (by index_id)")
 for loop_counter in range(num_loops):
     print(f'\n========== LOOP {loop_counter+1}/{num_loops} ==========')
 
+    # ============================================================
+    # === TOXICITY LEVEL FILTERING CONTROL ===
+    # Set to True to enable removal, False to disable
+    ENABLE_TOX_FILTERING = True
+    TOX_REMOVAL_PERCENT = 80  # Percentage to remove (0-100)
+    TOX_LEVELS_TO_FILTER = [3, 4]  # Which toxicity levels to filter
+    # ============================================================
+
     # SPLIT, FILTER, MAP GROUP/CLEAN (re-randomize every loop!)
     dataset = orig_dataset.copy()
     
@@ -212,6 +220,59 @@ for loop_counter in range(num_loops):
     counts = dataset_no_super_test['SMILES_spectra'].value_counts()
     valid_smiles = counts[counts >= 3].index
     filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
+
+    # ============================================================
+    # === TOXICITY LEVEL FILTERING (EASY TO COMMENT OUT) ===
+    # ============================================================
+    if ENABLE_TOX_FILTERING:
+        print(f"\n--- Toxicity Level Filtering ENABLED ---")
+        print(f"Removing {TOX_REMOVAL_PERCENT}% of SMILES with tox levels: {TOX_LEVELS_TO_FILTER}")
+        
+        # Temporarily add tox levels to identify which SMILES to remove
+        temp_filtered = filtered_dataset.copy()
+        temp_filtered = fd.add_response_and_log_response(temp_filtered, merged_EI_MSMS_subset, smiles_col='SMILES_spectra')
+        temp_filtered = fd.add_tox_levels(temp_filtered)
+        
+        # If tox_level column doesn't exist, derive it from one-hot columns
+        if 'tox_level' not in temp_filtered.columns:
+            tox_level_cols = [f'tox_level_{i}' for i in range(5)]
+            if all(col in temp_filtered.columns for col in tox_level_cols):
+                temp_filtered['tox_level'] = temp_filtered[tox_level_cols].values.argmax(axis=1)
+        
+        # Ensure tox_level is numeric for comparison
+        if 'tox_level' in temp_filtered.columns:
+            temp_filtered['tox_level'] = pd.to_numeric(temp_filtered['tox_level'], errors='coerce')
+        
+        # Get unique SMILES for each toxicity level to filter
+        all_smiles_to_remove = set()
+        np.random.seed(loop_counter + 999)  # Reproducible randomization
+        
+        for tox_level in TOX_LEVELS_TO_FILTER:
+            level_smiles = temp_filtered[temp_filtered['tox_level'] == tox_level]['SMILES_spectra'].unique()
+            n_remove = int(len(level_smiles) * (TOX_REMOVAL_PERCENT / 100))
+            
+            if n_remove > 0:
+                smiles_to_remove = np.random.choice(level_smiles, size=n_remove, replace=False)
+                all_smiles_to_remove.update(smiles_to_remove)
+                print(f"  Tox level {tox_level}: Removing {n_remove}/{len(level_smiles)} SMILES")
+        
+        # Apply the filtering
+        original_size = len(filtered_dataset)
+        filtered_dataset = filtered_dataset[~filtered_dataset['SMILES_spectra'].isin(all_smiles_to_remove)].copy()
+        new_size = len(filtered_dataset)
+        
+        # Drop temporary tox_level columns so rest of code runs unchanged
+        tox_cols_to_drop = [col for col in filtered_dataset.columns if col.startswith('tox_level')]
+        if tox_cols_to_drop:
+            filtered_dataset = filtered_dataset.drop(columns=tox_cols_to_drop)
+        
+        print(f"  Dataset size: {original_size} -> {new_size} (removed {original_size - new_size} spectra)")
+        print(f"--- Toxicity Filtering Complete ---\n")
+    else:
+        print("\n--- Toxicity Level Filtering DISABLED ---\n")
+    # ============================================================
+    # === END TOXICITY LEVEL FILTERING ===
+    # ============================================================
 
     # TRAIN-TEST SPLIT: SMILES-based 50/50 split (with CE_clean balancing)
     smiles_groups = filtered_dataset.groupby('SMILES_spectra')
