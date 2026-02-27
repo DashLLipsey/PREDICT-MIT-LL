@@ -197,12 +197,12 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         if 'CE_clean' not in dataset_no_super_test.columns:
             dataset_no_super_test['CE_clean'] = dataset_no_super_test['index_id'].map(id_to_ce_clean).fillna('Unknown')
                 
-        # Apply filtering (>=4 spectra per SMILES)
+        # Apply filtering (>=3 spectra per SMILES)
         counts = dataset_no_super_test['SMILES_spectra'].value_counts()
         valid_smiles = counts[counts >= 3].index
         filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
         
-        print(f"After filtering (>=4 spectra per SMILES): {filtered_dataset.shape}")
+        print(f"After filtering (>=3 spectra per SMILES): {filtered_dataset.shape}")
         
         # === Synthetic-awareness in splitting ===
         # Separate synthetic and real spectra to ensure synthetic only goes to train

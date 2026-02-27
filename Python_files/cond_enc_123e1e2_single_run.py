@@ -159,10 +159,10 @@ try:
 
     # Apply filtering
     counts = dataset['SMILES_spectra'].value_counts()
-    valid_smiles = counts[counts >= 4].index
+    valid_smiles = counts[counts >= 3].index
     filtered_dataset = dataset[dataset['SMILES_spectra'].isin(valid_smiles)].copy()
     
-    print(f"After filtering (>=4 spectra per SMILES): {filtered_dataset.shape}")
+    print(f"After filtering (>=3 spectra per SMILES): {filtered_dataset.shape}")
     
     # Vectorized train/test split
     smiles_groups = filtered_dataset.groupby('SMILES_spectra')
