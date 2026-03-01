@@ -18,9 +18,9 @@ dataset_name = 'bin1_thresh0_05_df_spectra'  # <-- must match parquet file in gr
 num_loops = 25       # how many repeated train/val splits & models
 
 # --- Toxicity filtering config (easy to comment out) ---
-ENABLE_TOX_FILTERING = False  # Set to True to enable toxicity-based filtering
-TOX_REMOVAL_PERCENT = 80      # Percentage of SMILES to remove (e.g., 80 = 80%)
-TOX_LEVELS_TO_FILTER = [3, 4] # Which toxicity levels to filter (3 and/or 4)
+ENABLE_TOX_FILTERING = True  # Set to True to enable toxicity-based filtering
+TOX_REMOVAL_PERCENT = 90      # Percentage of SMILES to remove (e.g., 80 = 80%)
+TOX_LEVELS_TO_FILTER = [2, 3, 4] # Which toxicity levels to filter (3 and/or 4)
 
 # --- Output folders (all must exist or will be made) ---
 VAL_INT_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_intermediate"
