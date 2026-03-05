@@ -197,4 +197,3 @@ cython_debug/
 
 # Ignorance of the large data folders
 MIT_LL_data/
-/home/dlipsey/Research/MITLincolnLabs/MIT_LL_data/cond_encoder_grid_search_dataframes
