@@ -253,18 +253,35 @@ for loop_counter in range(num_loops):
                     temp_filtered['tox_level'] = temp_filtered[tox_level_cols].values.argmax(axis=1)
             
             # Identify SMILES to remove based on toxicity levels
+            # Strategy: Remove SMILES such that % spectra removed ≈ removal_percent
             all_smiles_to_remove = set()
             np.random.seed(loop_counter + 999)  # Reproducible randomization per loop
             
             for tox_level, removal_percent in active_levels.items():
-                # Get unique SMILES at this toxicity level
-                level_smiles = temp_filtered[temp_filtered['tox_level'] == tox_level]['SMILES_spectra'].unique()
-                n_remove = int(len(level_smiles) * (removal_percent / 100))
+                # Get all spectra at this toxicity level
+                level_data = temp_filtered[temp_filtered['tox_level'] == tox_level]
+                total_spectra = len(level_data)
+                target_spectra_to_remove = int(total_spectra * (removal_percent / 100))
                 
-                if n_remove > 0:
-                    smiles_to_remove = np.random.choice(level_smiles, size=n_remove, replace=False)
-                    all_smiles_to_remove.update(smiles_to_remove)
-                    print(f"  Level {tox_level}: {len(level_smiles)} SMILES -> removing {n_remove} ({removal_percent}%)")
+                # Count spectra per SMILES at this level
+                smiles_spectra_counts = level_data['SMILES_spectra'].value_counts()
+                smiles_list = smiles_spectra_counts.index.tolist()
+                
+                # Shuffle SMILES and accumulate until we reach target spectra count
+                np.random.shuffle(smiles_list)
+                smiles_to_remove = []
+                cumulative_spectra = 0
+                
+                for smiles in smiles_list:
+                    if cumulative_spectra >= target_spectra_to_remove:
+                        break
+                    smiles_to_remove.append(smiles)
+                    cumulative_spectra += smiles_spectra_counts[smiles]
+                
+                all_smiles_to_remove.update(smiles_to_remove)
+                actual_percent = (cumulative_spectra / total_spectra * 100) if total_spectra > 0 else 0
+                print(f"  Level {tox_level}: {len(smiles_to_remove)}/{len(smiles_list)} SMILES removed "
+                      f"({cumulative_spectra}/{total_spectra} spectra = {actual_percent:.1f}%)")
             
             # Apply filtering
             print(f"\nTotal unique SMILES to remove: {len(all_smiles_to_remove)}")
