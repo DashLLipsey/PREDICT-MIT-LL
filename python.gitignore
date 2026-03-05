@@ -196,6 +196,5 @@ cython_debug/
 
 
 # Ignorance of the large data folders
-/home/dlipsey/Research/MITLincolnLabs/MIT_LL_data/chemnet_grid_search_dataframes
-/home/dlipsey/Research/MITLincolnLabs/MIT_LL_data/grid_search_dataframes
+MIT_LL_data/
 /home/dlipsey/Research/MITLincolnLabs/MIT_LL_data/cond_encoder_grid_search_dataframes
