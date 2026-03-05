@@ -19,8 +19,12 @@ num_loops = 25      # how many repeated train/val splits & models
 
 # --- Toxicity filtering config (easy to comment out) ---
 ENABLE_TOX_FILTERING = True  # Set to True to enable toxicity-based filtering
-TOX_REMOVAL_PERCENT = 80      # Percentage of SMILES to remove (e.g., 80 = 80%)
-TOX_LEVELS_TO_FILTER = [2, 3, 4] # Which toxicity levels to filter (3 and/or 4)
+# Removal percentage for each toxicity level (0-100, set to 0 to skip)
+tox_removal_percent_level_0 = 0
+tox_removal_percent_level_1 = 0
+tox_removal_percent_level_2 = 80
+tox_removal_percent_level_3 = 80
+tox_removal_percent_level_4 = 80
 
 # --- Output folders ---
 VAL_INT_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_cond_enc_134_loop_intermediate"
@@ -222,43 +226,56 @@ for loop_counter in range(num_loops):
     # Remove a percentage of SMILES with specified toxicity levels
     # ===================================================================
     if ENABLE_TOX_FILTERING:
-        print(f"\nApplying toxicity filtering: removing {TOX_REMOVAL_PERCENT}% of SMILES with levels {TOX_LEVELS_TO_FILTER}")
-        print(f"Dataset size before filtering: {len(filtered_dataset)}")
+        # Collect removal percentages for each level
+        tox_removal_dict = {
+            0: tox_removal_percent_level_0,
+            1: tox_removal_percent_level_1,
+            2: tox_removal_percent_level_2,
+            3: tox_removal_percent_level_3,
+            4: tox_removal_percent_level_4
+        }
+        active_levels = {k: v for k, v in tox_removal_dict.items() if v > 0}
         
-        # Create temporary copy with toxicity data
-        temp_filtered = filtered_dataset.copy()
-        temp_filtered = fd.add_response_and_log_response(temp_filtered, df6_subset, smiles_col='SMILES_spectra')
-        temp_filtered = fd.add_tox_levels(temp_filtered)
-        
-        # Derive scalar tox_level from one-hot encoded columns if not present
-        if 'tox_level' not in temp_filtered.columns:
-            tox_level_cols = [f'tox_level_{i}' for i in range(5)]
-            if all(col in temp_filtered.columns for col in tox_level_cols):
-                temp_filtered['tox_level'] = temp_filtered[tox_level_cols].values.argmax(axis=1)
-        
-        # Identify SMILES to remove based on toxicity levels
-        all_smiles_to_remove = set()
-        np.random.seed(loop_counter + 999)  # Reproducible randomization per loop
-        
-        for tox_level in TOX_LEVELS_TO_FILTER:
-            # Get unique SMILES at this toxicity level
-            level_smiles = temp_filtered[temp_filtered['tox_level'] == tox_level]['SMILES_spectra'].unique()
-            n_remove = int(len(level_smiles) * (TOX_REMOVAL_PERCENT / 100))
+        if active_levels:
+            print(f"\nApplying toxicity filtering with removal percentages: {active_levels}")
+            print(f"Dataset size before filtering: {len(filtered_dataset)}")
             
-            if n_remove > 0:
-                smiles_to_remove = np.random.choice(level_smiles, size=n_remove, replace=False)
-                all_smiles_to_remove.update(smiles_to_remove)
-                print(f"  Level {tox_level}: {len(level_smiles)} SMILES -> removing {n_remove} ({TOX_REMOVAL_PERCENT}%)")
-        
-        # Apply filtering
-        print(f"\nTotal unique SMILES to remove: {len(all_smiles_to_remove)}")
-        filtered_dataset = filtered_dataset[~filtered_dataset['SMILES_spectra'].isin(all_smiles_to_remove)].copy()
-        print(f"Dataset size after filtering: {len(filtered_dataset)}")
-        
-        # Clean up temporary toxicity columns from filtered_dataset to avoid conflicts
-        tox_cols_to_drop = [col for col in filtered_dataset.columns if col.startswith('tox_level')]
-        if tox_cols_to_drop:
-            filtered_dataset = filtered_dataset.drop(columns=tox_cols_to_drop)
+            # Create temporary copy with toxicity data
+            temp_filtered = filtered_dataset.copy()
+            temp_filtered = fd.add_response_and_log_response(temp_filtered, df6_subset, smiles_col='SMILES_spectra')
+            temp_filtered = fd.add_tox_levels(temp_filtered)
+            
+            # Derive scalar tox_level from one-hot encoded columns if not present
+            if 'tox_level' not in temp_filtered.columns:
+                tox_level_cols = [f'tox_level_{i}' for i in range(5)]
+                if all(col in temp_filtered.columns for col in tox_level_cols):
+                    temp_filtered['tox_level'] = temp_filtered[tox_level_cols].values.argmax(axis=1)
+            
+            # Identify SMILES to remove based on toxicity levels
+            all_smiles_to_remove = set()
+            np.random.seed(loop_counter + 999)  # Reproducible randomization per loop
+            
+            for tox_level, removal_percent in active_levels.items():
+                # Get unique SMILES at this toxicity level
+                level_smiles = temp_filtered[temp_filtered['tox_level'] == tox_level]['SMILES_spectra'].unique()
+                n_remove = int(len(level_smiles) * (removal_percent / 100))
+                
+                if n_remove > 0:
+                    smiles_to_remove = np.random.choice(level_smiles, size=n_remove, replace=False)
+                    all_smiles_to_remove.update(smiles_to_remove)
+                    print(f"  Level {tox_level}: {len(level_smiles)} SMILES -> removing {n_remove} ({removal_percent}%)")
+            
+            # Apply filtering
+            print(f"\nTotal unique SMILES to remove: {len(all_smiles_to_remove)}")
+            filtered_dataset = filtered_dataset[~filtered_dataset['SMILES_spectra'].isin(all_smiles_to_remove)].copy()
+            print(f"Dataset size after filtering: {len(filtered_dataset)}")
+            
+            # Clean up temporary toxicity columns from filtered_dataset to avoid conflicts
+            tox_cols_to_drop = [col for col in filtered_dataset.columns if col.startswith('tox_level')]
+            if tox_cols_to_drop:
+                filtered_dataset = filtered_dataset.drop(columns=tox_cols_to_drop)
+        else:
+            print("\nToxicity filtering enabled but no levels configured for removal")
     # ===================================================================
 
     # === Synthetic-awareness in splitting ===
