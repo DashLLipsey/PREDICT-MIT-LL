@@ -15,7 +15,6 @@ from fcd_torch import FCD
 import rdkit
 from collections import Counter
 import gc
-import pickle
 import wandb
 
 # Add the Python_files directory to the Python path
@@ -154,16 +153,16 @@ cond_encoder_results = []
 
 # Model parameters
 output_size = None  # Will be set dynamically based on data
-num_layers = 5
+num_layers = 6
 batch_size = 256
-epochs = 300
+epochs = 250
 lr = 0.0001
-lambda1 = 1
-lambda2 = 1
-lambda3 = 1  # For regular Morgan fingerprints
-lambda4 = 1  # For filtered Morgan fingerprints
-alpha1 = 8
-alpha2 = 6
+lambda1 = 80
+lambda2 = 2
+lambda3 = 100 # For regular Morgan fingerprints
+lambda4 = 100  # For filtered Morgan fingerprints
+alpha1 = 12
+alpha2 = 8
 alpha3 = 4
 alpha4 = 1
 # Loss functions
@@ -203,6 +202,10 @@ dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parqu
 allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin10_', 'bin100_', 'bin500_']
 allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1', 'thresh0_5', 
                               'thresh10', 'thresh50', 'thresh100']
+# # Allowed bin sizes and thresholds
+# allowed_bin_prefixes = ['bin1_']
+# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1', 'thresh0_5', 
+#                               'thresh10', 'thresh50', 'thresh100']
 
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
@@ -246,13 +249,13 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
 
         print(f"Loaded {dataset_name} - Shape: {dataset.shape}")
         
-        # Remove super test SMILES from training data (keep all spectra initially)
-        original_count = len(dataset)
+        # Remove super test SMILES from training data
         dataset_no_super_test = dataset[~dataset['SMILES_spectra'].isin(super_test_smiles)].copy()
+        original_count = len(dataset)
         removed_count = original_count - len(dataset_no_super_test)
-        print(f"Removed {removed_count} samples from super test SMILES (will keep real spectra only for super test)")
+        print(f"Removed {removed_count} super test samples")
         
-        # Add Group and CE_clean columns
+        # Add Group and CE_clean columns to training data
         if 'Group' not in dataset_no_super_test.columns:
             dataset_no_super_test['Group'] = dataset_no_super_test['index_id'].map(id_to_group).fillna('Unknown')
         
@@ -282,8 +285,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         test_indices = []
         
         # Use loop counter for reproducible but varied seeds across datasets
-        loop_counter = i - 1  # i is 1-indexed from enumerate
-        np.random.seed(loop_counter + 42)
+        np.random.seed(42)
         
         for smiles, group in smiles_groups:
             # Group by CE_clean level within this SMILES
@@ -331,12 +333,13 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         # Process datasets
         train_data_processed = fd.add_response_and_log_response(train_data.copy(), df6_subset, smiles_col='SMILES_spectra')
         test_data_processed = fd.add_response_and_log_response(test_data.copy(), df6_subset, smiles_col='SMILES_spectra')
-
+        
         # Create tensors for training
         print("Creating training tensors...")
         x_train_with_ext, y_train_emb, y_train_tox, y_train_morgan, y_train_filtered_morgan, train_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2(
                 train_data_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-6)
-
+        
+        print("Creating validation tensors...")
         x_val_with_ext, y_val_emb, y_val_tox, y_val_morgan, y_val_filtered_morgan, val_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2(
             test_data_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-6)
 
@@ -344,7 +347,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         actual_input_size = x_train_with_ext.shape[1]
         print(f"Creating model with input size: {actual_input_size}")
 
-        cond_encoder_current = fd.Cond_Encoder_1234(input_size=actual_input_size,
+        cond_encoder_current = fd.Cond_Encoder_1234(input_size=actual_input_size, 
                                                              output_size=output_size, 
                                                              num_layers=num_layers).to(device)
         
@@ -407,6 +410,8 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         
         # ==================== EVALUATE ON FULL VALIDATION SET ==================== #
         print("Evaluating on full validation set...")
+        trained_cond_encoder.eval()
+
         # Prepare full filtered dataset
         filtered_dataset_full = filtered_dataset.copy()
         
@@ -434,9 +439,9 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             filtered_dataset_for_tensors, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-6)
         
         # Generate predictions on full validation set
-        cond_encoder_current.eval()
+        trained_cond_encoder.eval()
         with torch.no_grad():
-            full_val_predictions = cond_encoder_current(x_full_val_with_ext).cpu().numpy()
+            full_val_predictions = trained_cond_encoder(x_full_val_with_ext).cpu().numpy()
 
         # Create output DataFrame for full validation set
         emb_cols = [f'cond_emb_{j}' for j in range(512)]
@@ -479,7 +484,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             thresh_part = parts[1].split('_df_spectra')[0]
             threshold_part = f"thresh{thresh_part}"
         
-        full_val_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_1234e1e2_outputs_df6"
+        full_val_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_1234e1e2_outputs"
         os.makedirs(full_val_output_folder, exist_ok=True)
 
         full_val_predictions_filename = f"cond_enc_{bin_part}_{threshold_part}_df_spectra.parquet"
@@ -501,21 +506,24 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         if len(super_test_df) > 0:
             print(f"Super test set size: {len(super_test_df)} samples")
             
-            # Add Group and CE_clean columns to super test set
+            # Add Group and CE_clean columns
             if 'Group' not in super_test_df.columns:
                 super_test_df['Group'] = super_test_df['index_id'].map(id_to_group).fillna('Unknown')
             
             if 'CE_clean' not in super_test_df.columns:
                 super_test_df['CE_clean'] = super_test_df['index_id'].map(id_to_ce_clean).fillna('Unknown')
             
-            # CRITICAL: Preserve index_id - use it for 'index' column, never reassign
             super_test_df['index'] = super_test_df['index_id']
             super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
             
+            # Align columns with training data to prevent shape mismatches
+            common_cols = [col for col in train_data_processed.columns if col in super_test_processed.columns]
+            super_test_processed = super_test_processed[common_cols]
+
             # Create tensors for super test set
             x_super_test_with_ext, y_super_test_emb, y_super_test_tox, y_super_test_morgan, y_super_test_filtered_morgan, super_test_indices_tensor = fd.create_dataset_tensors_condenc_1234e1e2(
                 super_test_processed, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-6)
-            
+
             # Generate predictions on super test set
             with torch.no_grad():
                 super_test_predictions = cond_encoder_current(x_super_test_with_ext).cpu().numpy()
@@ -540,7 +548,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             super_test_output_df['train'] = 0  # Super test samples were not in training set
             
             # Save super test set predictions
-            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_1234e1e2_supertest_outputs"
+            super_test_output_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/cond_enc_1234e1e2_outputs_super_test"
             os.makedirs(super_test_output_folder, exist_ok=True)
 
             super_test_predictions_filename = f"super_test_cond_enc_{bin_part}_{threshold_part}_df_spectra.parquet"

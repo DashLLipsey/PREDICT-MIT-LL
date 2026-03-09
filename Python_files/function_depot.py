@@ -270,7 +270,7 @@ class Cond_Encoder_12(nn.Module): # From Cond_Encoder_chemnet_tox
         
         return final_output
 
-def train_model_condenc_12e1e2_weightloss(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, 
+def train_model_condenc_12e1e2(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, 
                                     lambda1, lambda2, device, config = chemnet_tox_config):
     """
     Training function for conditional encoder 12e1e2 (ChemNet + Toxicity + Group + CE_clean).
@@ -418,130 +418,6 @@ class Cond_Encoder_123(nn.Module): # From Cond_Encoder_full
         
         return final_output
 
-def train_model_condenc_123e1(model, train_data, val_data, epochs, learning_rate, criterion1, criterion2, criterion3, 
-                                           lambda1, lambda2, lambda3, device, config = chemnet_tox_morgan_config):
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    wandb.init(entity=config['wandb_entity'],
-               project=config['wandb_project'],
-               config=config) 
-               
-    # Initialize lists to store losses
-    train_losses = []
-    val_losses = []
-
-    for epoch in range(epochs):
-        model.train()
-        running_loss = 0.0
-        running_embedding_loss = 0.0
-        running_toxicity_loss = 0.0
-        running_morgan_loss = 0.0
-        
-        # Modified: batch now includes group information as part of input
-        for batch_with_group, true_embeddings, true_log_tox, true_morgan, _ in train_data:
-            batch_with_group = batch_with_group.to(device)  # Input includes spectra + group encoding
-            true_embeddings = true_embeddings.to(device)
-            true_log_tox = true_log_tox.to(device)
-            true_morgan = true_morgan.to(device)
-
-            optimizer.zero_grad()
-            batch_predicted_combined = model(batch_with_group)  # Forward pass with group info
-            
-            # Embedding Loss
-            batch_predicted_embeddings = batch_predicted_combined[:, :512] # First 512 columns
-            loss1 = criterion1(batch_predicted_embeddings, true_embeddings) # loss1 (embedding loss)
-            # Response Loss
-            batch_predicted_log_tox = batch_predicted_combined[:, 512:513] # 512th column
-            loss2 = criterion2(batch_predicted_log_tox, true_log_tox) # loss2 (toxicity loss)
-            # Morgan Loss
-            batch_predicted_morgan = batch_predicted_combined[:, 513:] # Last 2048 columns
-            loss3 = criterion3(batch_predicted_morgan, true_morgan) # loss3 (morgan loss)
-
-            # Apply lambda weighting
-            weighted_loss1 = lambda1 * loss1
-            weighted_loss2 = lambda2 * loss2
-            weighted_loss3 = lambda3 * loss3
-            
-            # Total loss with modular weights (group is NOT included in loss)
-            total_loss = weighted_loss1 + weighted_loss2 + weighted_loss3
-
-            total_loss.backward()
-            optimizer.step()
-            
-            # Accumulate losses
-            running_loss += total_loss.item()
-            running_embedding_loss += weighted_loss1.item()
-            running_toxicity_loss += weighted_loss2.item()
-            running_morgan_loss += weighted_loss3.item()
-            
-        average_train_loss = running_loss / len(train_data)
-        average_train_embedding_loss = running_embedding_loss / len(train_data)
-        average_train_toxicity_loss = running_toxicity_loss / len(train_data)
-        average_train_morgan_loss = running_morgan_loss / len(train_data)
-        wandb.log({"average_train_loss": average_train_loss})
-        wandb.log({"average_train_embedding_loss": average_train_embedding_loss})
-        wandb.log({"average_train_toxicity_loss": average_train_toxicity_loss})
-        wandb.log({"average_train_morgan_loss": average_train_morgan_loss})
-
-        model.eval()
-        val_loss = 0.0
-        val_embedding_loss = 0.0
-        val_toxicity_loss = 0.0
-        val_morgan_loss = 0.0
-        
-        with torch.no_grad():
-            # Modified: validation batch also includes group information
-            for val_batch_with_group, val_true_embeddings, val_true_tox, val_true_morgan, _ in val_data:
-                val_batch_with_group = val_batch_with_group.to(device)  # Input includes spectra + group encoding
-                val_true_embeddings = val_true_embeddings.to(device)
-                val_true_tox = val_true_tox.to(device)
-                val_true_morgan = val_true_morgan.to(device)
-
-                val_batch_predicted = model(val_batch_with_group)  # Forward pass with group info
-                val_batch_predicted_embeddings = val_batch_predicted[:, :512]
-                val_batch_predicted_tox = val_batch_predicted[:, 512:513]
-                val_batch_predicted_morgan = val_batch_predicted[:, 513:]
-
-                # Calculate individual losses (group is NOT included in loss calculation)
-                val_loss1 = criterion1(val_batch_predicted_embeddings, val_true_embeddings)
-                val_loss2 = criterion2(val_batch_predicted_tox, val_true_tox)
-                val_loss3 = criterion3(val_batch_predicted_morgan, val_true_morgan)
-                
-                # Apply lambda weighting
-                val_weighted_loss1 = lambda1 * val_loss1
-                val_weighted_loss2 = lambda2 * val_loss2
-                val_weighted_loss3 = lambda3 * val_loss3
-                
-                # Accumulate losses
-                val_loss += (val_weighted_loss1 + val_weighted_loss2 + val_weighted_loss3).item()
-                val_embedding_loss += val_weighted_loss1.item()
-                val_toxicity_loss += val_weighted_loss2.item()
-                val_morgan_loss += val_weighted_loss3.item()
-                
-        average_val_loss = val_loss / len(val_data)
-        average_val_embedding_loss = val_embedding_loss / len(val_data)
-        average_val_toxicity_loss = val_toxicity_loss / len(val_data)
-        average_val_morgan_loss = val_morgan_loss / len(val_data)
-        wandb.log({"average_val_loss": average_val_loss})
-        wandb.log({"average_val_embedding_loss": average_val_embedding_loss})
-        wandb.log({"average_val_toxicity_loss": average_val_toxicity_loss})
-        wandb.log({"average_val_morgan_loss": average_val_morgan_loss})
-
-        # Store losses for this epoch
-        train_losses.append(average_train_loss)
-        val_losses.append(average_val_loss)
-
-        if epoch % 10 == 0 or epoch == epochs - 1:
-            print(f'Epoch [{epoch+1}/{epochs}]')
-            print(f'   Training loss: {average_train_loss:.6f}')
-            print(f'   Training embedding loss: {average_train_embedding_loss:.6f}')
-            print(f'   Training toxicity loss: {average_train_toxicity_loss:.6f}')
-            print(f'   Training morgan loss: {average_train_morgan_loss:.6f}')
-            print(f'   Validation loss: {average_val_loss:.6f}')
-            print(f'   Validation embedding loss: {average_val_embedding_loss:.6f}')
-            print(f'   Validation toxicity loss: {average_val_toxicity_loss:.6f}')
-            print(f'   Validation morgan loss: {average_val_morgan_loss:.6f}')
-    wandb.finish()
-    return model, train_losses, val_losses
 #%%
 
 ### Same condiitional encoder as above buth now with both group and collision energy as external conditions
@@ -1144,6 +1020,11 @@ def create_dataset_tensors_12e1e2(spectra_dataset, embedding_df, device, start_i
     ce_categorical = pd.Categorical(spectra_dataset['CE_clean'], categories=all_ce_categories)
     ce_encoded = pd.get_dummies(ce_categorical, prefix='ce', dtype=int)
     
+    # Reset indices to ensure alignment during concatenation
+    spectra = spectra.reset_index(drop=True)
+    group_encoded = group_encoded.reset_index(drop=True)
+    ce_encoded = ce_encoded.reset_index(drop=True)
+    
     # Concatenate spectra with group and collision energy encoding
     spectra_with_ext = pd.concat([spectra, group_encoded, ce_encoded], axis=1)
 
@@ -1154,8 +1035,7 @@ def create_dataset_tensors_12e1e2(spectra_dataset, embedding_df, device, start_i
     spectra_with_ext_tensor = torch.Tensor(spectra_with_ext.values).to(device)
     spectra_indices_tensor = torch.Tensor(spectra_dataset['index'].to_numpy()).to(device)
 
-    return embeddings_tensor, log_tox_tensor, spectra_with_ext_tensor, spectra_indices_tensor 
-
+    return spectra_with_ext_tensor, embeddings_tensor, log_tox_tensor, spectra_indices_tensor
 # 4 internal and 2 external conditions
 def create_dataset_tensors_condenc_1234e1e2(spectra_dataset, embedding_df, morgan_df, filtered_morgan_df, device, 
                                             start_idx=None, stop_idx=None,
@@ -1209,6 +1089,11 @@ def create_dataset_tensors_condenc_1234e1e2(spectra_dataset, embedding_df, morga
     # One-hot encode the CE_clean column with all possible categories
     ce_categorical = pd.Categorical(spectra_dataset['CE_clean'], categories=all_ce_categories)
     ce_encoded = pd.get_dummies(ce_categorical, prefix='ce', dtype=int)
+    
+    # Reset indices to ensure alignment during concatenation
+    spectra = spectra.reset_index(drop=True)
+    group_encoded = group_encoded.reset_index(drop=True)
+    ce_encoded = ce_encoded.reset_index(drop=True)
     
     # Concatenate spectra with group and collision energy encoding
     spectra_with_ext = pd.concat([spectra, group_encoded, ce_encoded], axis=1)

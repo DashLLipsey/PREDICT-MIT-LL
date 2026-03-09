@@ -157,18 +157,15 @@ cond_encoder_results = []
 
 # Model parameters
 output_size = None  # Will be set dynamically based on data
-num_layers = 5
+num_layers = 6
 batch_size = 256
-epochs = 300
+epochs = 250
 lr = 0.0001
-lambda1 = 1
-lambda2 = 1
-lambda3 = 1  # For regular Morgan fingerprints
-lambda4 = 1  # For filtered Morgan fingerprints
-alpha1 = 8
-alpha2 = 6
-alpha3 = 4
-alpha4 = 1
+lambda1 = 80
+lambda2 = 2
+lambda3 = 100  # For regular Morgan fingerprints
+lambda4 = 100  # For filtered Morgan fingerprints
+
 # Loss functions
 criterion1 = nn.MSELoss()  # ChemNet embeddings
 criterion2 = nn.MSELoss()  # Toxicity
@@ -187,11 +184,6 @@ name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_
 morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_morganfp.parquet")
 filtered_morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_filtered_morganfp.parquet")
 
-# # Load in internal conditions with noise
-# name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_chemnet_noise.parquet")
-# morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_morganfp_noise.parquet")
-# filtered_morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_filtered_morganfp_noise.parquet")
-
 # Load the original dataset for response mapping
 df6_subset = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_subset.parquet")
 df6_spectra = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_spectra.parquet")
@@ -202,10 +194,15 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 # Get all dataset files from the grid search folder
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
+
 # Allowed bin sizes and thresholds
 allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin10_', 'bin100_', 'bin500_']
 allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1', 'thresh0_5', 
                               'thresh10', 'thresh50', 'thresh100']
+# # Allowed bin sizes and thresholds
+# allowed_bin_prefixes = ['bin500_']
+# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1', 'thresh0_5', 
+#                               'thresh10', 'thresh50', 'thresh100']
 
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
@@ -285,8 +282,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         test_indices = []
         
         # Use loop counter for reproducible but varied seeds across datasets
-        loop_counter = i - 1  # i is 1-indexed from enumerate
-        np.random.seed(loop_counter + 42)
+        np.random.seed(42)
         
         for smiles, group in smiles_groups:
             # Group by CE_clean level within this SMILES
@@ -390,6 +386,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             epochs=epochs,
             learning_rate=lr,
             criterion1=criterion1,
+            criterion2=criterion2,
             criterion3=criterion3,
             criterion4=criterion4,
             lambda1=lambda1,
@@ -402,6 +399,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         
         # ==================== EVALUATE ON FULL VALIDATION SET ==================== #
         print("Evaluating on full validation set...")
+        trained_cond_encoder.eval()
         # Prepare full filtered dataset
         filtered_dataset_full = filtered_dataset.copy()
         
@@ -429,7 +427,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             filtered_dataset_for_tensors, name_smiles_embedding_df, morgan_df, filtered_morgan_df, device, start_idx=1, stop_idx=-6)
         
         # Generate predictions on full validation set
-        cond_encoder_current.eval()
+        trained_cond_encoder.eval()
         with torch.no_grad():
             full_val_predictions = cond_encoder_current(x_full_val_with_ext).cpu().numpy()
 

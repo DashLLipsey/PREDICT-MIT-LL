@@ -132,12 +132,11 @@ cond_encoder_results = []
 output_size = None  # Will be set dynamically based on data
 num_layers = 5
 batch_size = 256
-epochs = 300
+epochs = 250
 lr = 0.0001
-lambda1 = 1
+lambda1 = 10
 lambda2 = 1
-alpha1 = 8
-alpha2 = 6
+
 # Loss functions
 criterion1 = nn.MSELoss()  # ChemNet embeddings
 criterion2 = nn.MSELoss()  # Toxicity
@@ -150,19 +149,12 @@ print(f"Super test SMILES to remove from training: {len(super_test_smiles)}")
 device = fd.set_up_gpu()
 
 # Step 1 embedding inputs
-# Real data only:
 name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_chemnet.parquet")
-# With synthetic noise:
-# name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_chemnet_noise.parquet")
-
 # Load the original dataset for response mapping
 df6_subset = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_subset.parquet")
-
-# Load spectra metadata - options:
-# Real data only:
+# Load spectra metadata
 df6_spectra = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_spectra.parquet")
-# With synthetic noise spectra:
-# df6_spectra = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_spectra_noise.parquet")
+
 
 # Define folders
 grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes_df6"
@@ -170,10 +162,14 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 # Get all dataset files from the grid search folder
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
+
 # Allowed bin sizes and thresholds
 allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin10_', 'bin100_', 'bin500_']
 allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1', 'thresh0_5', 
                               'thresh10', 'thresh50', 'thresh100']
+# # Allowed bin sizes and thresholds
+# allowed_bin_prefixes = ['bin10_']
+# allowed_threshold_suffixes = ['thresh0_05']
 
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
@@ -293,20 +289,20 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         # Process datasets
         train_data_processed = fd.add_response_and_log_response(train_data.copy(), df6_subset, smiles_col='SMILES_spectra')
         test_data_processed = fd.add_response_and_log_response(test_data.copy(), df6_subset, smiles_col='SMILES_spectra')
-
+        
         # Create tensors for training
-        print("Creating training tensors...")
+        # Use stop_idx=-6 to exclude both Response and log_response columns from input
         x_train_with_ext, y_train_emb, y_train_tox, train_indices_tensor = fd.create_dataset_tensors_12e1e2(
-                train_data_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
+                train_data_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-6)
 
         x_val_with_ext, y_val_emb, y_val_tox, val_indices_tensor = fd.create_dataset_tensors_12e1e2(
-            test_data_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
-
+            test_data_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-6)
+        
         # Create model
         actual_input_size = x_train_with_ext.shape[1]
         print(f"Creating model with input size: {actual_input_size}")
 
-        cond_encoder_current = fd.Cond_Encoder_12e1e2(input_size=actual_input_size,
+        cond_encoder_current = fd.Cond_Encoder_12(input_size=actual_input_size,
                                                              output_size=output_size, 
                                                              num_layers=num_layers).to(device)
         
@@ -320,7 +316,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         bin_size, threshold = parse_dataset_name(dataset_name)
         
         # Create wandb config
-        chemnet_12e1e2_weight = {
+        chemnet_12e1e2 = {
             'wandb_entity': 'dashlipsey-worcester-polytechnic-institute',
             'wandb_project': 'MIT-Lincoln-Lab',
             'wandb_name': f"cond_enc_12e1e2_df6_{dataset_name}",
@@ -333,8 +329,6 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             'epochs': epochs,
             'lambda1': lambda1,
             'lambda2': lambda2,
-            'alpha1': alpha1,
-            'alpha2': alpha2,
             'Bin': bin_size,
             'Threshold': threshold,
             'super_test_removed': True,
@@ -342,19 +336,18 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
 
         # ==================== TRAIN MODEL ==================== #
         print("Training model...")
-        trained_cond_encoder = fd.train_model_condenc_12e1e2_weightloss(
+        trained_cond_encoder = fd.train_model_condenc_12e1e2(
             model=cond_encoder_current,
             train_data=train_loader,
             val_data=val_loader,
             epochs=epochs,
             learning_rate=lr,
             criterion1=criterion1,
+            criterion2=criterion2,
             lambda1=lambda1,
             lambda2=lambda2,
             device=device,
-            config=chemnet_12e1e2_weight,
-            alpha1=alpha1,
-            alpha2=alpha2
+            config=chemnet_12e1e2
         )
         
         # ==================== EVALUATE ON FULL VALIDATION SET ==================== #
@@ -382,11 +375,13 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         filtered_dataset_for_tensors = filtered_dataset_full_processed.drop(columns=['original_index', 'train']).copy()
         
         # Create tensors for full validation set
+        # Use stop_idx=-6 to exclude both Response and log_response columns from input
         x_full_val_with_ext, y_full_val_emb, y_full_val_tox, full_val_indices_tensor = fd.create_dataset_tensors_12e1e2(
-            filtered_dataset_for_tensors, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
+            filtered_dataset_for_tensors, name_smiles_embedding_df, device, start_idx=1, stop_idx=-6)
         
         # Generate predictions on full validation set
         cond_encoder_current.eval()
+        
         with torch.no_grad():
             full_val_predictions = cond_encoder_current(x_full_val_with_ext).cpu().numpy()
 
@@ -406,7 +401,7 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         # Verify train column
         train_count = full_val_output_df['train'].sum()
         val_count = len(full_val_output_df) - train_count
-        print(f"Train column added: {train_count} training samples, {val_count} validation samples")
+        print(f"Train column added: {train_count} training samples, {val_count} validation samples\n")
         
         # Save full validation set predictions
         if 'thresh_zero' in dataset_name:
@@ -452,8 +447,9 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
             
             # Create tensors for super test set
+            # Use stop_idx=-6 to exclude both Response and log_response columns from input
             x_super_test_with_ext, y_super_test_emb, y_super_test_tox, super_test_indices_tensor = fd.create_dataset_tensors_12e1e2(
-                super_test_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-4)
+                super_test_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-6)
             
             # Generate predictions on super test set
             with torch.no_grad():
@@ -465,8 +461,8 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             
             # Add metadata
             super_test_output_df['SMILES_spectra'] = super_test_processed['SMILES_spectra'].values
-            super_test_output_df['Response'] = super_test_processed['Response'].values
             super_test_output_df['log_response'] = super_test_processed['log_response'].values
+            super_test_output_df['Response'] = super_test_processed['Response'].values
             super_test_output_df['index_id'] = super_test_processed['index_id'].values
             super_test_output_df['train'] = 0  # Super test samples were not in training set
             

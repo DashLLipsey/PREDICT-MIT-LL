@@ -1,105 +1,105 @@
-# EI Only Dataset Processing
-# Basic Package Imports
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+# # EI Only Dataset Processing
+# # Basic Package Imports
+# import pandas as pd
+# import numpy as np
+# import matplotlib.pyplot as plt
+# import seaborn as sns
 
-# sklearn
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.decomposition import PCA
-from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-from sklearn.metrics import f1_score
-from sklearn.metrics import mean_squared_error, r2_score
+# # sklearn
+# from sklearn.preprocessing import OneHotEncoder
+# from sklearn.model_selection import train_test_split
+# from sklearn.ensemble import RandomForestRegressor
+# from sklearn.ensemble import RandomForestClassifier
+# from sklearn.decomposition import PCA
+# from sklearn.model_selection import GridSearchCV
+# from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+# from sklearn.metrics import f1_score
+# from sklearn.metrics import mean_squared_error, r2_score
 
-# imblearn
-from imblearn.over_sampling import RandomOverSampler
-from imblearn.under_sampling import RandomUnderSampler
+# # imblearn
+# from imblearn.over_sampling import RandomOverSampler
+# from imblearn.under_sampling import RandomUnderSampler
 
-# Non-basic package imports
-import torch
-import torch.nn as nn
-from torch.utils.data import TensorDataset, DataLoader
-import requests
+# # Non-basic package imports
+# import torch
+# import torch.nn as nn
+# from torch.utils.data import TensorDataset, DataLoader
+# import requests
 
-# Packages I don't understand
-from fcd_torch import FCD
-import rdkit
-from collections import Counter
-import gc
-import pickle
+# # Packages I don't understand
+# from fcd_torch import FCD
+# import rdkit
+# from collections import Counter
+# import gc
+# import pickle
 
-# Add the Python_files directory to the Python path
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
+# # Add the Python_files directory to the Python path
+# import sys
+# import os
+# sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
 
-# Now you can import your modules
-import function_depot as fd
+# # Now you can import your modules
+# import function_depot as fd
 
-# Load data ONCE
-print("Loading EI only data...")
-EI_only_spectra = pd.read_parquet('/home/dlipsey/MITLincolnLabs/MIT_LL_data/EI_only_spectra.parquet')
-print(f"EI_only_spectra shape: {EI_only_spectra.shape}")
+# # Load data ONCE
+# print("Loading EI only data...")
+# EI_only_spectra = pd.read_parquet('/home/dlipsey/MITLincolnLabs/MIT_LL_data/EI_only_spectra.parquet')
+# print(f"EI_only_spectra shape: {EI_only_spectra.shape}")
 
-EI_only_subset = pd.read_parquet('/home/dlipsey/MITLincolnLabs/MIT_LL_data/EI_only_subset.parquet')
-print(f"EI_only_subset shape: {EI_only_subset.shape}")
+# EI_only_subset = pd.read_parquet('/home/dlipsey/MITLincolnLabs/MIT_LL_data/EI_only_subset.parquet')
+# print(f"EI_only_subset shape: {EI_only_subset.shape}")
 
-# Check for duplicate columns before processing
-print(f"Checking for duplicate columns in EI_only_spectra...")
-duplicate_cols = EI_only_spectra.columns[EI_only_spectra.columns.duplicated()].tolist()
-if duplicate_cols:
-    print(f"WARNING: Found {len(duplicate_cols)} duplicate columns: {duplicate_cols[:10]}")
-    # Remove duplicate columns
-    EI_only_spectra = EI_only_spectra.loc[:, ~EI_only_spectra.columns.duplicated()]
-    print(f"After removing duplicates: {EI_only_spectra.shape}")
+# # Check for duplicate columns before processing
+# print(f"Checking for duplicate columns in EI_only_spectra...")
+# duplicate_cols = EI_only_spectra.columns[EI_only_spectra.columns.duplicated()].tolist()
+# if duplicate_cols:
+#     print(f"WARNING: Found {len(duplicate_cols)} duplicate columns: {duplicate_cols[:10]}")
+#     # Remove duplicate columns
+#     EI_only_spectra = EI_only_spectra.loc[:, ~EI_only_spectra.columns.duplicated()]
+#     print(f"After removing duplicates: {EI_only_spectra.shape}")
 
-# CONVERT DATA TYPES FIRST
-print("Converting spectral columns to float data types...")
-spectral_cols = EI_only_spectra.columns[1:-5]
-print(f"Converting {len(spectral_cols)} spectral columns to float")
+# # CONVERT DATA TYPES FIRST
+# print("Converting spectral columns to float data types...")
+# spectral_cols = EI_only_spectra.columns[1:-5]
+# print(f"Converting {len(spectral_cols)} spectral columns to float")
 
-# Convert column names to float
-new_columns = []
-for col in EI_only_spectra.columns:
-    if col in spectral_cols:
-        try:
-            new_columns.append(float(col))
-        except ValueError:
-            print(f"Warning: Could not convert column '{col}' to float, keeping as is")
-            new_columns.append(col)
-    else:
-        new_columns.append(col)
+# # Convert column names to float
+# new_columns = []
+# for col in EI_only_spectra.columns:
+#     if col in spectral_cols:
+#         try:
+#             new_columns.append(float(col))
+#         except ValueError:
+#             print(f"Warning: Could not convert column '{col}' to float, keeping as is")
+#             new_columns.append(col)
+#     else:
+#         new_columns.append(col)
 
-EI_only_spectra.columns = new_columns
+# EI_only_spectra.columns = new_columns
 
-# Convert spectral column values to float64
-spectral_cols_float = [col for col in EI_only_spectra.columns if isinstance(col, float)]
-print(f"Converting values in {len(spectral_cols_float)} columns to float64...")
+# # Convert spectral column values to float64
+# spectral_cols_float = [col for col in EI_only_spectra.columns if isinstance(col, float)]
+# print(f"Converting values in {len(spectral_cols_float)} columns to float64...")
 
-for col in spectral_cols_float:
-    EI_only_spectra[col] = pd.to_numeric(EI_only_spectra[col], errors='coerce').astype('float64')
+# for col in spectral_cols_float:
+#     EI_only_spectra[col] = pd.to_numeric(EI_only_spectra[col], errors='coerce').astype('float64')
 
-print("Data type conversion complete.")
+# print("Data type conversion complete.")
 
-# Verify no duplicates after conversion
-print(f"Final check - duplicate columns: {EI_only_spectra.columns.duplicated().sum()}")
+# # Verify no duplicates after conversion
+# print(f"Final check - duplicate columns: {EI_only_spectra.columns.duplicated().sum()}")
 
-# Define parameters
-bin_sizes = [0.1, 0.5, 1, 2]
-thresholds = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1]
-save_directory = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/EI_only_dataframes"
-print("Starting binning process...")
-# Create all datasets with corrected indices
-all_datasets = fd.binning_loop(EI_only_spectra, EI_only_subset, bin_sizes, thresholds, save_directory, 
-                              indx_id_indx=-5,  # Points to 'index_id'
-                              startindx=1,      # First spectral column  
-                              stopindx=-5)      # Stop before metadata columns
-print("Binning complete!")
+# # Define parameters
+# bin_sizes = [0.1, 0.5, 1, 2]
+# thresholds = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1]
+# save_directory = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/EI_only_dataframes"
+# print("Starting binning process...")
+# # Create all datasets with corrected indices
+# all_datasets = fd.binning_loop(EI_only_spectra, EI_only_subset, bin_sizes, thresholds, save_directory, 
+#                               indx_id_indx=-5,  # Points to 'index_id'
+#                               startindx=1,      # First spectral column  
+#                               stopindx=-5)      # Stop before metadata columns
+# print("Binning complete!")
 
 
 
@@ -248,111 +248,111 @@ print("Binning complete!")
 
 
 
-# # Basic Package Imports
-# import pandas as pd
-# import numpy as np
-# import matplotlib.pyplot as plt
-# import seaborn as sns
+# Basic Package Imports
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# # sklearn
-# from sklearn.preprocessing import OneHotEncoder
-# from sklearn.model_selection import train_test_split
-# from sklearn.ensemble import RandomForestRegressor
-# from sklearn.ensemble import RandomForestClassifier
-# from sklearn.decomposition import PCA
-# from sklearn.model_selection import GridSearchCV
-# from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-# from sklearn.metrics import f1_score
-# from sklearn.metrics import mean_squared_error, r2_score
+# sklearn
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.decomposition import PCA
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import f1_score
+from sklearn.metrics import mean_squared_error, r2_score
 
-# # imblearn
-# from imblearn.over_sampling import RandomOverSampler
-# from imblearn.under_sampling import RandomUnderSampler
+# imblearn
+from imblearn.over_sampling import RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler
 
-# # Non-basic package imports
-# import torch
-# import torch.nn as nn
-# from torch.utils.data import TensorDataset, DataLoader
-# import requests
+# Non-basic package imports
+import torch
+import torch.nn as nn
+from torch.utils.data import TensorDataset, DataLoader
+import requests
 
-# # Packages I don't understand
-# from fcd_torch import FCD
-# import rdkit
-# from collections import Counter
-# import gc
-# import pickle
+# Packages I don't understand
+from fcd_torch import FCD
+import rdkit
+from collections import Counter
+import gc
+import pickle
 
-# # Add the Python_files directory to the Python path
-# import sys
-# import os
-# sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
+# Add the Python_files directory to the Python path
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
 
-# # Now you can import your modules
-# import function_depot as fd
+# Now you can import your modules
+import function_depot as fd
 
-# # Load data ONCE
-# print("Loading data...")
-# df6 = pd.read_csv("/home/dlipsey/MITLincolnLabs/MIT_LL_data/dataset_sep23.csv")
-# print(f"df6 shape: {df6.shape}")
+# Load data ONCE
+print("Loading data...")
+df6 = pd.read_csv("/home/dlipsey/MITLincolnLabs/MIT_LL_data/dataset_sep23.csv")
+print(f"df6 shape: {df6.shape}")
 
-# df6_spectra = pd.read_parquet('/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_spectra.parquet')
-# print(f"df6_spectra shape: {df6_spectra.shape}")
+df6_spectra = pd.read_parquet('/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_spectra.parquet')
+print(f"df6_spectra shape: {df6_spectra.shape}")
 
-# df6_subset = pd.read_parquet('/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_subset.parquet')
-# print(f"df6_subset shape: {df6_subset.shape}")
+df6_subset = pd.read_parquet('/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_subset.parquet')
+print(f"df6_subset shape: {df6_subset.shape}")
 
-# # Check for duplicate columns before processing
-# print(f"Checking for duplicate columns in df6_spectra...")
-# duplicate_cols = df6_spectra.columns[df6_spectra.columns.duplicated()].tolist()
-# if duplicate_cols:
-#     print(f"WARNING: Found {len(duplicate_cols)} duplicate columns: {duplicate_cols[:10]}")
-#     # Remove duplicate columns
-#     df6_spectra = df6_spectra.loc[:, ~df6_spectra.columns.duplicated()]
-#     print(f"After removing duplicates: {df6_spectra.shape}")
+# Check for duplicate columns before processing
+print(f"Checking for duplicate columns in df6_spectra...")
+duplicate_cols = df6_spectra.columns[df6_spectra.columns.duplicated()].tolist()
+if duplicate_cols:
+    print(f"WARNING: Found {len(duplicate_cols)} duplicate columns: {duplicate_cols[:10]}")
+    # Remove duplicate columns
+    df6_spectra = df6_spectra.loc[:, ~df6_spectra.columns.duplicated()]
+    print(f"After removing duplicates: {df6_spectra.shape}")
 
-# # CONVERT DATA TYPES FIRST
-# print("Converting spectral columns to float data types...")
-# spectral_cols = df6_spectra.columns[1:-5]
-# print(f"Converting {len(spectral_cols)} spectral columns to float")
+# CONVERT DATA TYPES FIRST
+print("Converting spectral columns to float data types...")
+spectral_cols = df6_spectra.columns[1:-5]
+print(f"Converting {len(spectral_cols)} spectral columns to float")
 
-# # Convert column names to float
-# new_columns = []
-# for col in df6_spectra.columns:
-#     if col in spectral_cols:
-#         try:
-#             new_columns.append(float(col))
-#         except ValueError:
-#             print(f"Warning: Could not convert column '{col}' to float, keeping as is")
-#             new_columns.append(col)
-#     else:
-#         new_columns.append(col)
+# Convert column names to float
+new_columns = []
+for col in df6_spectra.columns:
+    if col in spectral_cols:
+        try:
+            new_columns.append(float(col))
+        except ValueError:
+            print(f"Warning: Could not convert column '{col}' to float, keeping as is")
+            new_columns.append(col)
+    else:
+        new_columns.append(col)
 
-# df6_spectra.columns = new_columns
+df6_spectra.columns = new_columns
 
-# # Convert spectral column values to float64
-# spectral_cols_float = [col for col in df6_spectra.columns if isinstance(col, float)]
-# print(f"Converting values in {len(spectral_cols_float)} columns to float64...")
+# Convert spectral column values to float64
+spectral_cols_float = [col for col in df6_spectra.columns if isinstance(col, float)]
+print(f"Converting values in {len(spectral_cols_float)} columns to float64...")
 
-# for col in spectral_cols_float:
-#     df6_spectra[col] = pd.to_numeric(df6_spectra[col], errors='coerce').astype('float64')
+for col in spectral_cols_float:
+    df6_spectra[col] = pd.to_numeric(df6_spectra[col], errors='coerce').astype('float64')
 
-# print("Data type conversion complete.")
+print("Data type conversion complete.")
 
-# # Verify no duplicates after conversion
-# print(f"Final check - duplicate columns: {df6_spectra.columns.duplicated().sum()}")
-# # 0.5, 1, 2, 0.05, 0.1, 5, 10, 25, 50, 100, 200, 500, 1000
-# # 0.01, 0.05, 0.1, 0.001, 0.005, 0.5, 1, 2, 5, 10, 50, 100
-# # Define parameters
-# bin_sizes = [0.1, 0.5, 1, 2] # 0.1, [5, 10, 25, 50] # [100, 200, 500]
-# thresholds = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1]
-# save_directory = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes_df6"
-# print("Starting binning process...")
-# # Create all datasets with corrected indices
-# all_datasets = fd.binning_loop(df6_spectra, df6_subset, bin_sizes, thresholds, save_directory, 
-#                               indx_id_indx=-5,  # Points to 'index_id'
-#                               startindx=1,      # First spectral column  
-#                               stopindx=-5)      # Stop before metadata columns
-# print("Binning complete!")
+# Verify no duplicates after conversion
+print(f"Final check - duplicate columns: {df6_spectra.columns.duplicated().sum()}")
+# 0.5, 1, 2, 0.05, 0.1, 5, 10, 25, 50, 100, 200, 500, 1000
+# 0.01, 0.05, 0.1, 0.001, 0.005, 0.5, 1, 2, 5, 10, 50, 100
+# Define parameters
+bin_sizes = [0.1] # 0.1, [5, 10, 25, 50] # [100, 200, 500]
+thresholds = [0.01, 0.05, 0.1, 0.001, 0.005, 0.5, 1, 2, 5, 10, 50, 100]
+save_directory = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes_df6"
+print("Starting binning process...")
+# Create all datasets with corrected indices
+all_datasets = fd.binning_loop(df6_spectra, df6_subset, bin_sizes, thresholds, save_directory, 
+                              indx_id_indx=-5,  # Points to 'index_id'
+                              startindx=1,      # First spectral column  
+                              stopindx=-5)      # Stop before metadata columns
+print("Binning complete!")
 
 
 
