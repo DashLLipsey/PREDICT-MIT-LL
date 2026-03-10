@@ -173,6 +173,10 @@ dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parqu
 allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin10_', 'bin100_', 'bin500_']
 allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1', 'thresh0_5', 
                               'thresh10', 'thresh50', 'thresh100']
+# #  Allowed bin sizes and thresholds
+# allowed_bin_prefixes = [ 'bin1_', 'bin500_']
+# allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1', 'thresh0_5', 
+#                               'thresh10', 'thresh50', 'thresh100']
 
 # Filter dataset files to only include allowed bin sizes and thresholds
 dataset_files = [f for f in dataset_files if any(f.startswith(prefix) for prefix in allowed_bin_prefixes)]
@@ -587,19 +591,19 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         train_data_processed = fd.add_response_and_log_response(train_data.copy(), df6_subset, smiles_col='SMILES_spectra')
         test_data_processed = fd.add_response_and_log_response(test_data.copy(), df6_subset, smiles_col='SMILES_spectra')
         
-        # Extract spectra features (columns from index 1 to -3: exclude metadata)
-        # Structure: index_id, spectra (149), SMILES_spectra, Response, log_response
-        # So features are from column 1 to -3 (exclude SMILES_spectra, Response, log_response at the end)
-        feature_start = 1  # Skip index_id
-        feature_end = -3  # Exclude SMILES_spectra, Response, log_response at the end
+        # Extract spectra features directly (same data as encoder input, but no tensors)
+        # Identify numeric spectra columns (exclude metadata)
+        exclude_cols = {'index_id', 'index', 'SMILES_spectra', 'Response', 'log_response'}
+        numeric_cols = train_data_processed.select_dtypes(include=[np.number]).columns
+        spectra_feature_cols = [col for col in numeric_cols if col not in exclude_cols]
         
-        X_train_rf = train_data_processed.iloc[:, feature_start:feature_end].values
+        X_train_rf = train_data_processed[spectra_feature_cols].values
         y_train_rf = train_data_processed['log_response'].values
-        
-        X_val_rf = test_data_processed.iloc[:, feature_start:feature_end].values
+
+        X_val_rf = test_data_processed[spectra_feature_cols].values
         y_val_rf = test_data_processed['log_response'].values
-        
-        print(f"Training RF on spectra features: X_train shape {X_train_rf.shape}, y_train shape {y_train_rf.shape}")
+
+        print(f"Training RF on {len(spectra_feature_cols)} spectra features: X_train shape {X_train_rf.shape}, y_train shape {y_train_rf.shape}")
         
         # ==================== TRAIN RANDOM FOREST DIRECTLY ON SPECTRA ==================== #
         print(f"Training Random Forest directly on spectra (n_estimators={rf_n_estimators})...")
@@ -639,13 +643,8 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         # Add train indicator
         filtered_dataset_full_processed['train'] = filtered_dataset_full_processed['original_index'].map(train_indicator_map).fillna(0).astype(int)
         
-        # Extract features - find spectra columns (numeric columns excluding metadata)
-        # Get column names to identify spectra features
-        numeric_cols = filtered_dataset_full_processed.select_dtypes(include=[np.number]).columns
-        # Exclude metadata columns: original_index, index_id, index, Response, log_response, train
-        exclude_cols = {'original_index', 'index_id', 'index', 'Response', 'log_response', 'train'}
-        spectra_cols = [col for col in numeric_cols if col not in exclude_cols]
-        X_full_val_rf = filtered_dataset_full_processed[spectra_cols].values
+        # Extract same spectra features as training
+        X_full_val_rf = filtered_dataset_full_processed[spectra_feature_cols].values
         
         # Generate predictions with RF
         full_val_direct_predictions = rf_direct_model.predict(X_full_val_rf)
@@ -708,11 +707,8 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             super_test_df['index'] = super_test_df['index_id']
             super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
             
-            # Extract features - find spectra columns (numeric columns excluding metadata)
-            numeric_cols_st = super_test_processed.select_dtypes(include=[np.number]).columns
-            exclude_cols_st = {'index_id', 'index', 'Response', 'log_response'}
-            spectra_cols_st = [col for col in numeric_cols_st if col not in exclude_cols_st]
-            X_super_test_rf = super_test_processed[spectra_cols_st].values
+            # Extract same spectra features as training
+            X_super_test_rf = super_test_processed[spectra_feature_cols].values
             
             # Generate predictions with RF
             super_test_direct_predictions = rf_direct_model.predict(X_super_test_rf)
