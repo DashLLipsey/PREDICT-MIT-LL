@@ -11,16 +11,16 @@ import function_depot as fd
 
 ### USER SETTINGS
 dataset_name = 'bin1_thresh0_05_df_spectra'  # 'bin1_thresh0_05_df_spectra'
-num_loops = 20
+num_loops = 10
 
 # --- Toxicity filtering config (easy to comment out) ---
-ENABLE_TOX_FILTERING = True  # Set to True to enable toxicity-based filtering
+ENABLE_TOX_FILTERING = False  # Set to True to enable toxicity-based filtering
 # Removal percentage for each toxicity level (0-100, set to 0 to skip)
-tox_removal_percent_level_0 = 100
-tox_removal_percent_level_1 = 100
-tox_removal_percent_level_2 = 32.8
-tox_removal_percent_level_3 = 71.3
-tox_removal_percent_level_4 = 0
+tox_removal_percent_level_0 = 0
+tox_removal_percent_level_1 = 0
+tox_removal_percent_level_2 = 86.5
+tox_removal_percent_level_3 = 94.3
+tox_removal_percent_level_4 = 79.5
 
 VAL_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop"
 SUPER_DIR = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/regular_classifier_loop_super_test"
@@ -121,9 +121,9 @@ def parse_dataset_name(dataset_name):
     return bin_size, threshold
 
 num_classes = 5
-num_layers = 6
+num_layers = 1
 batch_size = 256
-epochs = 350
+epochs = 250
 lr = 0.0001
 dropout = 0.35
 layer1_size = 32
@@ -170,7 +170,7 @@ for loop_counter in range(num_loops):
     filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
 
     # ============================================================
-    # === TOXICITY LEVEL FILTERING (EASY TO COMMENT OUT) ===
+    # === TOXICITY LEVEL FILTERING ===
     # ============================================================
     if ENABLE_TOX_FILTERING:
         # Collect removal percentages for each level

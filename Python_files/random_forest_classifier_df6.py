@@ -11,8 +11,8 @@ import functions_enc as f
 import function_depot as fd
 
 ###### ========== USER SETTINGS ========== #######
-dataset_name = 'bin0_1_thresh0_05_df_spectra' 
-num_loops = 25
+dataset_name = 'bin1_thresh0_05_df_spectra' 
+num_loops = 10
 
 ##### ==================== SUPER TEST SET SMILES ==================== #####
 # New Super Test SMILES list
@@ -206,9 +206,6 @@ for loop_counter in range(num_loops):
     rf_model = RandomForestClassifier(
         n_estimators=100,
         random_state=loop_counter + 42,
-        max_depth=None,
-        min_samples_split=2,
-        min_samples_leaf=1,
         n_jobs=-1
     )
     rf_model.fit(X_train, y_train)

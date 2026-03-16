@@ -15,16 +15,16 @@ import function_depot as fd
 bin_size = 1.0  # 1.0 and 0.1     
 threshold = 0.05  # 0.5 and 0.05
 dataset_name = 'bin1_thresh0_05_df_spectra'  # <-- must match parquet file in grid_search_folder
-num_loops = 25       # how many repeated train/val splits & models
+num_loops = 10       # how many repeated train/val splits & models
 
 # --- Toxicity filtering config (easy to comment out) ---
-ENABLE_TOX_FILTERING = True  # Set to True to enable toxicity-based filtering
+ENABLE_TOX_FILTERING = False  # Set to True to enable toxicity-based filtering
 # Removal percentage for each toxicity level (0-100, set to 0 to skip)
 tox_removal_percent_level_0 = 0
 tox_removal_percent_level_1 = 0
-tox_removal_percent_level_2 = 90
-tox_removal_percent_level_3 = 90
-tox_removal_percent_level_4 = 90
+tox_removal_percent_level_2 = 86.5
+tox_removal_percent_level_3 = 94.3
+tox_removal_percent_level_4 = 79.5
 
 # --- Output folders (all must exist or will be made) ---
 VAL_INT_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_intermediate"
@@ -123,31 +123,6 @@ super_test_smiles = [
     'c1ccc(Nc2ccc3ccccc3c2)cc1'
 ]
 
-# # Super test SMILES (original list from your script)
-# super_test_smiles = [
-#     'COC(=O)C=C(C)OP(=O)(OC)OC',
-#     'COc1cc2c(c3oc(=O)c4c(c13)CCC4=O)[C@@H]1C=CO[C@@H]1O2',
-#     'CC(=O)OC1(C)CC(C)C(=O)C(C(O)CC2CC(=O)NC(=O)C2)C1',
-#     'C[C@H]1O[C@@H](O[C@H]2[C@@H](O)C[C@H](O[C@H]3[C@@H](O)C[C@H](O[C@H]4CC[C@@]5(C)[C@H](CC[C@@H]6[C@@H]5C[C@@H](O)[C@]5(C)[C@@H](C7=CC(=O)OC7)CC[C@]65O)C4)O[C@@H]3C)O[C@@H]2C)C[C@H](O)[C@@H]1O',
-#     'CNC(=O)Oc1cc(C)cc(C(C)C)c1',
-#     'CNC(=O)Oc1ccc(N(C)C)c(C)c1',
-#     'C[C@@H]1Cc2c(Cl)cc(C(=O)N[C@@H](Cc3ccccc3)C(=O)O)c(O)c2C(=O)O1',
-#     'COc1ccc2c(c1)c(CC(=O)OCC(=O)O)c(C)n2C(=O)c1ccc(Cl)cc1',
-#     'CC(C)(C)CC(C)(C)c1ccc(OCCOCC[N+](C)(C)Cc2ccccc2)cc1',
-#     'CC(=O)N1CCN(c2ccc(OC[C@H]3CO[C@](Cn4ccnc4)(c4ccc(Cl)cc4Cl)O3)cc2)CC1',
-#     'c1ccc(C2CN3CCSC3=N2)cc1',
-#     'CN(C)CCC=C1c2ccccc2CCc2ccccc21',
-#     'CCOP(=S)(OCC)Oc1ccc2c(C)c(Cl)c(=O)oc2c1',
-#     'CC(C)NCC(O)COc1cccc2ccccc12',
-#     'CCOC(=O)C(C)(C)Oc1ccc(Cl)cc1',
-#     'CCN(CC)CCNC(=O)c1cc(Cl)c(N)cc1OC',
-#     'COc1ccc2c(c1OC)C(=O)OC2C1c2cc3c(cc2CCN1C)OCO3',
-#     'CN(C)c1ccc(SC#N)cc1',
-#     'CC(C)[C@H](N)C(=O)O',
-#     'CCCCOC(=O)COC(=O)c1ccccc1C(=O)OCCCC',
-#     'NC(C(=O)O)c1ccccc1'
-# ]
-
 #### ==== Model params ==== ####
 embedding_num_layers = 6
 embedding_batch_size = 256
@@ -156,10 +131,10 @@ embedding_lr = 0.0001
 lambda1 = 15
 lambda3 = 5
 lambda4 = 10
-dropout1 = 0.5
+dropout1 = 0.35
 
 input_length=4608
-tox_num_layers = 4
+tox_num_layers = 1
 tox_batch_size = 256
 tox_epochs = 250
 tox_lr = 0.0001

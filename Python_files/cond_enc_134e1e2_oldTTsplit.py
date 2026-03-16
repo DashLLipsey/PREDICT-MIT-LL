@@ -22,9 +22,9 @@ ENABLE_TOX_FILTERING = False  # Set to True to enable toxicity-based filtering
 # Removal percentage for each toxicity level (0-100, set to 0 to skip)
 tox_removal_percent_level_0 = 0
 tox_removal_percent_level_1 = 0
-tox_removal_percent_level_2 = 0
-tox_removal_percent_level_3 = 0
-tox_removal_percent_level_4 = 0
+tox_removal_percent_level_2 = 86.5
+tox_removal_percent_level_3 = 94.3
+tox_removal_percent_level_4 = 79.5
 
 # --- Output folders ---
 VAL_INT_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2_step_oldTTsplit_loop_intermediate"
@@ -140,7 +140,7 @@ lambda4 = 10
 dropout1 = 0.35
 
 input_length=4608
-tox_num_layers = 4
+tox_num_layers = 1
 tox_batch_size = 256
 tox_epochs = 250
 tox_lr = 0.0001
