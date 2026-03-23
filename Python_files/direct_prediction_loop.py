@@ -274,29 +274,29 @@ for loop_counter in range(num_loops):
     # Splits each SMILES group 50/50 between train and test
     # ensuring no data leakage between sets
     # Synthetic data is added to training set only
-    # CHANGE: Now balances CE_clean levels within each SMILES group #change
+    # CHANGE: Now balances CE_clean levels within each SMILES group 
     # ===================================================================
     smiles_groups = real_data.groupby('SMILES_spectra')
     train_indices, test_indices = [], []
     np.random.seed(loop_counter + 42)
     for smiles, group in smiles_groups:
-        # CHANGE: Group by CE_clean level within this SMILES #change
-        ce_groups = group.groupby('CE_clean', dropna=False) #change
-        smiles_train_idx = [] #change
-        smiles_test_idx = [] #change
+        # CHANGE: Group by CE_clean level within this SMILES 
+        ce_groups = group.groupby('CE_clean', dropna=False) 
+        smiles_train_idx = [] 
+        smiles_test_idx = [] 
         
-        for ce_level, ce_group in ce_groups: #change
-            idx = ce_group.index.values #change
-            n = len(idx) #change
-            np.random.shuffle(idx) #change
+        for ce_level, ce_group in ce_groups: 
+            idx = ce_group.index.values 
+            n = len(idx) 
+            np.random.shuffle(idx) 
             split = n // 2 #change
-            # CHANGE: Distribute this CE_clean level evenly between train/test #change
-            smiles_test_idx.extend(idx[:split]) #change
-            smiles_train_idx.extend(idx[split:]) #change
+            # CHANGE: Distribute this CE_clean level evenly between train/test 
+            smiles_test_idx.extend(idx[:split]) 
+            smiles_train_idx.extend(idx[split:]) 
         
-        # CHANGE: Add this SMILES' indices to global lists #change
-        test_indices.extend(smiles_test_idx) #change
-        train_indices.extend(smiles_train_idx) #change
+        # CHANGE: Add this SMILES' indices to global lists 
+        test_indices.extend(smiles_test_idx) 
+        train_indices.extend(smiles_train_idx) 
     
     # Add ALL synthetic to training, NOT to test
     train_indices.extend(synthetic_data.index.values)

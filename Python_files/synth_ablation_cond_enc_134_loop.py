@@ -15,16 +15,16 @@ import function_depot as fd
 bin_size = 1.0  # 1.0 and 0.1     
 threshold = 0.05  # 0.5 and 0.05
 dataset_name = 'bin1_thresh0_05_df_spectra'  # <-- must match parquet file in grid_search_folder
-num_loops = 10       # how many repeated train/val splits & models
+num_loops = 1      # how many repeated train/val splits & models
 
 # --- Toxicity filtering config (easy to comment out) ---
-ENABLE_TOX_FILTERING = False  # Set to True to enable toxicity-based filtering
+ENABLE_TOX_FILTERING = True  # Set to True to enable toxicity-based filtering
 # Removal percentage for each toxicity level (0-100, set to 0 to skip)
 tox_removal_percent_level_0 = 0
-tox_removal_percent_level_1 = 0
-tox_removal_percent_level_2 = 86.5
-tox_removal_percent_level_3 = 94.3
-tox_removal_percent_level_4 = 79.5
+tox_removal_percent_level_1 = 100
+tox_removal_percent_level_2 = 100
+tox_removal_percent_level_3 = 100
+tox_removal_percent_level_4 = 100
 
 # --- Output folders (all must exist or will be made) ---
 VAL_INT_DIR  = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/2step_synth_abl_134_loop_intermediate"
@@ -134,7 +134,7 @@ lambda4 = 10
 dropout1 = 0.35
 
 input_length=4608
-tox_num_layers = 1
+tox_num_layers = 4
 tox_batch_size = 256
 tox_epochs = 250
 tox_lr = 0.0001
@@ -186,13 +186,13 @@ for loop_counter in range(num_loops):
     if 'CE_clean' not in dataset_no_super_test.columns:
         dataset_no_super_test['CE_clean'] = dataset_no_super_test['index_id'].map(id_to_ce_clean).fillna('Unknown')
     
-    # ---- Remove synthetic spectra EARLY (matching first version behavior) ----
+    # ---- Remove synthetic spectra EARLY (synthetic ablation) ----
     before_synth = len(dataset_no_super_test)
     dataset_no_super_test = dataset_no_super_test[~dataset_no_super_test['index_id'].isin(synthetic_index_ids)].copy()
     after_synth = len(dataset_no_super_test)
     print(f"Removed {before_synth - after_synth} samples with synthetic==1")
     
-    # Filter for SMILES with at least 4 spectra (now all real spectra only)
+    # Filter for SMILES with at least 3 spectra (now all real spectra only)
     counts = dataset_no_super_test['SMILES_spectra'].value_counts()
     valid_smiles = counts[counts >= 3].index
     filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
@@ -283,11 +283,10 @@ for loop_counter in range(num_loops):
     # ============================================================
 
     # ===================================================================
-    # TRAIN-TEST SPLIT: SMILES-based 50/50 split (with CE_clean balancing)
+    # NEW TRAIN-TEST SPLIT: SMILES-based 50/50 split (with CE_clean balancing)
     # Splits each SMILES group 50/50 between train and test
     # ensuring no data leakage between sets
     # Balances CE_clean levels within each SMILES group
-    # NO synthetic data included (already removed above)
     # ===================================================================
     smiles_groups = filtered_dataset.groupby('SMILES_spectra')
     train_indices, test_indices = [], []
@@ -314,6 +313,25 @@ for loop_counter in range(num_loops):
     train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
     test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
 
+    # # ===================================================================
+    # # TRAIN-TEST SPLIT: Simple 50/50 split (no CE_clean balancing)
+    # # Splits each SMILES group 50/50 between train and test
+    # # NO synthetic data included (already removed above)
+    # # ===================================================================
+    # smiles_groups = filtered_dataset.groupby('SMILES_spectra')
+    # train_indices, test_indices = [], []
+    # np.random.seed(loop_counter + 42)
+    # for smiles, group in smiles_groups:
+    #     idx = group.index.values
+    #     n = len(idx)
+    #     np.random.shuffle(idx)
+    #     split = n // 2
+    #     test_indices.extend(idx[:split])
+    #     train_indices.extend(idx[split:])
+
+    # train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
+    # test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
+
     # Keep original index_id, add temp_index only for internal processing if needed
     # DO NOT overwrite index_id - it tracks specific spectra across the pipeline
     train_data_processed = fd.add_response_and_log_response(train_data.copy(), df6_subset, smiles_col='SMILES_spectra')
@@ -325,12 +343,6 @@ for loop_counter in range(num_loops):
     test_data_processed = fd.add_tox_levels(test_data_processed)
     # Add 'index' column for the tensor function, but use index_id values
     test_data_processed['index'] = test_data_processed['index_id']
-
-
-
-
-
-
 
 
     # ==== STEP 1: EMBEDDING ====
@@ -497,6 +509,19 @@ for loop_counter in range(num_loops):
     train_intermediate_df = intermediate_df[intermediate_df['train']==1].reset_index(drop=True)
     val_intermediate_df = intermediate_df[intermediate_df['train']==0].reset_index(drop=True)
 
+
+    # Ensure all tox_level_0 to tox_level_4 columns are present after filtering
+    for col in [f"tox_level_{i}" for i in range(5)]:
+        if col not in train_intermediate_df.columns:
+            train_intermediate_df[col] = 0
+        if col not in val_intermediate_df.columns:
+            val_intermediate_df[col] = 0
+    # Optional: reorder columns if needed
+    tox_cols = [f"tox_level_{i}" for i in range(5)]
+    for df in [train_intermediate_df, val_intermediate_df]:
+        existing_cols = [c for c in df.columns if c not in tox_cols]
+        df = df[existing_cols + tox_cols]
+
     train_concat_emb, train_tox_labels = fd.create_dataset_tensors_toxicity_classifier_134(
         train_intermediate_df, device)
     val_concat_emb, val_tox_labels = fd.create_dataset_tensors_toxicity_classifier_134(
@@ -595,6 +620,14 @@ for loop_counter in range(num_loops):
         super_interm_path = os.path.join(SUPER_INT_DIR, super_interm_fn)
         if os.path.exists(super_interm_path):
             super_test_intermediate_df = pd.read_parquet(super_interm_path)
+            # Ensure all tox_level_0 to tox_level_4 columns are present
+            for col in [f"tox_level_{i}" for i in range(5)]:
+                if col not in super_test_intermediate_df.columns:
+                    super_test_intermediate_df[col] = 0
+            # Optional: reorder columns if needed
+            tox_cols = [f"tox_level_{i}" for i in range(5)]
+            existing_cols = [c for c in super_test_intermediate_df.columns if c not in tox_cols]
+            super_test_intermediate_df = super_test_intermediate_df[existing_cols + tox_cols]
             super_test_concat_emb, super_test_tox_labels = fd.create_dataset_tensors_toxicity_classifier_134(
                 super_test_intermediate_df, device)
             with torch.no_grad():

@@ -22,7 +22,7 @@ import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
 
-# Now you can import your modules
+# My Modules
 import functions_enc as f
 import function_depot as fd
 
@@ -105,30 +105,6 @@ super_test_smiles = [
     'CCCCOC(=O)CC(CC(=O)OCCCC)(OC(C)=O)C(=O)OCCC',
     'c1ccc(Nc2ccc3ccccc3c2)cc1'
 ]
-# # Define super test set SMILES to remove from training
-# super_test_smiles = [
-#     'COC(=O)C=C(C)OP(=O)(OC)OC',
-#     'COc1cc2c(c3oc(=O)c4c(c13)CCC4=O)[C@@H]1C=CO[C@@H]1O2',
-#     'CC(=O)OC1(C)CC(C)C(=O)C(C(O)CC2CC(=O)NC(=O)C2)C1',
-#     'C[C@H]1O[C@@H](O[C@H]2[C@@H](O)C[C@H](O[C@H]3[C@@H](O)C[C@H](O[C@H]4CC[C@@]5(C)[C@H](CC[C@@H]6[C@@H]5C[C@@H](O)[C@]5(C)[C@@H](C7=CC(=O)OC7)CC[C@]65O)C4)O[C@@H]3C)O[C@@H]2C)C[C@H](O)[C@@H]1O',
-#     'CNC(=O)Oc1cc(C)cc(C(C)C)c1',
-#     'CNC(=O)Oc1ccc(N(C)C)c(C)c1',
-#     'C[C@@H]1Cc2c(Cl)cc(C(=O)N[C@@H](Cc3ccccc3)C(=O)O)c(O)c2C(=O)O1',
-#     'COc1ccc2c(c1)c(CC(=O)OCC(=O)O)c(C)n2C(=O)c1ccc(Cl)cc1',
-#     'CC(C)(C)CC(C)(C)c1ccc(OCCOCC[N+](C)(C)Cc2ccccc2)cc1',
-#     'CC(=O)N1CCN(c2ccc(OC[C@H]3CO[C@](Cn4ccnc4)(c4ccc(Cl)cc4Cl)O3)cc2)CC1',
-#     'c1ccc(C2CN3CCSC3=N2)cc1',
-#     'CN(C)CCC=C1c2ccccc2CCc2ccccc21',
-#     'CCOP(=S)(OCC)Oc1ccc2c(C)c(Cl)c(=O)oc2c1',
-#     'CC(C)NCC(O)COc1cccc2ccccc12',
-#     'CCOC(=O)C(C)(C)Oc1ccc(Cl)cc1',
-#     'CCN(CC)CCNC(=O)c1cc(Cl)c(N)cc1OC',
-#     'COc1ccc2c(c1OC)C(=O)OC2C1c2cc3c(cc2CCN1C)OCO3',
-#     'CN(C)c1ccc(SC#N)cc1',
-#     'CC(C)[C@H](N)C(=O)O',
-#     'CCCCOC(=O)COC(=O)c1ccccc1C(=O)OCCCC',
-#     'NC(C(=O)O)c1ccccc1'
-# ]
 
 def parse_dataset_name(dataset_name):
     """Extract bin size and threshold from dataset name"""
@@ -155,7 +131,7 @@ cond_encoder_results = []
 output_size = None  # Will be set dynamically based on data
 num_layers = 6
 batch_size = 256
-epochs = 250
+epochs = 2500
 lr = 0.0001
 lambda1 = 80
 lambda2 = 2
@@ -199,7 +175,7 @@ grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataf
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
 
 # Allowed bin sizes and thresholds
-allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin10_', 'bin100_', 'bin500_']
+allowed_bin_prefixes = ['bin0_1_'] #, 'bin0_5_', 'bin1_', 'bin10_', 'bin100_', 'bin500_'
 allowed_threshold_suffixes = ['thresh_zero', 'thresh0_01', 'thresh0_05', 'thresh0_1', 'thresh0_5', 
                               'thresh10', 'thresh50', 'thresh100']
 # # Allowed bin sizes and thresholds

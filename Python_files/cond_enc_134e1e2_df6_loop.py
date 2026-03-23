@@ -396,10 +396,10 @@ for loop_counter in range(num_loops):
     )
 
     # ==== STEP 1: GENERATE EMBEDDINGS FOR ALL ====
-    embedding_model.eval() # Enter evaluation mode to generate embeddings
+    trained_embedding_model.eval() # Enter evaluation mode to generate embeddings
     with torch.no_grad():
-        train_embeddings_combined = embedding_model(x_train_with_ext).cpu()
-        val_embeddings_combined = embedding_model(x_val_with_ext).cpu()
+        train_embeddings_combined = trained_embedding_model(x_train_with_ext).cpu()
+        val_embeddings_combined = trained_embedding_model(x_val_with_ext).cpu()
     train_pred_chemnet = train_embeddings_combined[:, :512]
     train_pred_morgan = train_embeddings_combined[:, 512:512+regular_morgan_bits]
     train_pred_filtered_morgan = train_embeddings_combined[:, 512+regular_morgan_bits:]
