@@ -8,26 +8,28 @@ import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-# --- CONFIGURATION
-base_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data"
-reg_known_folder = f"{base_folder}/cond_enc_1234e1e2"
-reg_novel_folder = f"{base_folder}/cond_enc_1234e1e2_super_test"
+# ---- Sourcing of data files
+bin_size = 0.5
+threshold = 0.5
 
-bin_val = 1
-threshold_val = 0.05
-loop_num = 0
-bin_part = str(bin_val).replace('.', '_')
-threshold_part = str(threshold_val).replace('.', '_')
-known_file = f"{reg_known_folder}/cond_enc_bin{bin_part}_thresh{threshold_part}_df_spectra_loop{loop_num}.parquet"
-novel_file = f"{reg_novel_folder}/super_test_cond_enc_bin{bin_part}_thresh{threshold_part}_df_spectra_loop{loop_num}.parquet"
+# Explicitly set the files to use
+known_file = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/plotly_dataframes/plotly_df_regr.parquet"
+novel_file = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/plotly_dataframes/plotly_df_regr_super_test.parquet"
+chemnet_file = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/plotly_dataframes/df6_chemnet.parquet"
 smiles_col = "SMILES_spectra"
 
-def pad_or_truncate(embeddings, target_dim):
-    if embeddings.shape[1] < target_dim:
-        return np.hstack([embeddings, np.zeros((embeddings.shape[0], target_dim - embeddings.shape[1]))])
-    elif embeddings.shape[1] > target_dim:
-        return embeddings[:, :target_dim]
-    return embeddings
+# --- LD50 (mg/kg) → tox_level bins
+def assign_tox_level(response):
+    if response <= 5:
+        return 0
+    elif response <= 50:
+        return 1
+    elif response <= 500:
+        return 2
+    elif response <= 5000:
+        return 3
+    else:
+        return 4
 
 def sample_spectra_per_chemical(df, smiles_col, max_per_smiles, seed):
     selected_rows = []
@@ -39,7 +41,32 @@ def sample_spectra_per_chemical(df, smiles_col, max_per_smiles, seed):
             selected_rows.extend(smile_rows.index)
     return df.loc[selected_rows]
 
-def load_data(file_path, smiles_col, max_smiles, max_spectra, filter_train=None, required_smiles=None, seed=None):
+def balanced_smiles_selection(df, smiles_col, tox_col, max_smiles, seed):
+    # df: must have unique [smiles_col, tox_col] rows!
+    smiles_tox = df[[smiles_col, tox_col]].drop_duplicates()
+    tox_counts = smiles_tox[tox_col].value_counts()
+    n_classes = tox_counts.shape[0]
+    min_per_class = max_smiles // n_classes if n_classes > 0 else 0
+    remaining = max_smiles
+    selected = []
+    rng = np.random.default_rng(seed)
+    for tox_level, count in tox_counts.sort_index().items():
+        available = smiles_tox[smiles_tox[tox_col] == tox_level][smiles_col].values
+        n_select = min(min_per_class, count, remaining)
+        if n_select > 0:
+            selected.extend(rng.choice(available, size=n_select, replace=False))
+            remaining -= n_select
+    # If there's quota, fill from everything else left
+    if remaining > 0:
+        remaining_smiles = smiles_tox[~smiles_tox[smiles_col].isin(selected)][smiles_col].values
+        n_available = len(remaining_smiles)
+        if n_available > 0:
+            n_pick = min(remaining, n_available)
+            selected.extend(rng.choice(remaining_smiles, size=n_pick, replace=False))
+            remaining -= n_pick
+    return df[df[smiles_col].isin(selected)]
+
+def load_data(file_path, smiles_col, max_smiles, max_spectra, filter_train=None, required_smiles=None, seed=None, balance_classes=False):
     try:
         df = pd.read_parquet(file_path)
         if filter_train is not None and 'train' in df.columns:
@@ -47,26 +74,56 @@ def load_data(file_path, smiles_col, max_smiles, max_spectra, filter_train=None,
         embedding_cols = [col for col in df.columns if col.startswith('cond_emb_')
                           and 'morgan' not in col.lower() and 'filtered' not in col.lower()]
         if not embedding_cols or len(df) == 0:
-            return None, None, None, None, set()
+            return None, None, None, None, set(), None
+
+        # Assign regression tox level to each SMILES based on median Response for balancing.
+        if balance_classes and 'Response' in df.columns:
+            smile2response = df.groupby(smiles_col)['Response'].median()
+            smile2tox = smile2response.apply(assign_tox_level)
+            df = df.merge(smile2tox.rename("bal_tox_level"), left_on=smiles_col, right_index=True)
+        else:
+            df["bal_tox_level"] = None
+
         if required_smiles is not None and len(required_smiles) > 0:
             df = df[df[smiles_col].isin(required_smiles)]
         else:
             unique_smiles = pd.unique(df[smiles_col])
             if len(unique_smiles) > max_smiles:
-                if seed is not None:
-                    np.random.seed(seed)
-                selected_smiles_subset = np.random.choice(unique_smiles, max_smiles, replace=False)
-                df = df[df[smiles_col].isin(selected_smiles_subset)]
+                if balance_classes and 'bal_tox_level' in df.columns and df['bal_tox_level'].notna().any():
+                    df = balanced_smiles_selection(df, smiles_col, 'bal_tox_level', max_smiles, seed)
+                else:
+                    if seed is not None:
+                        np.random.seed(seed)
+                    selected_smiles_subset = np.random.choice(unique_smiles, max_smiles, replace=False)
+                    df = df[df[smiles_col].isin(selected_smiles_subset)]
+
         df = sample_spectra_per_chemical(df, smiles_col, max_spectra, seed)
         embeddings = df[embedding_cols].values
         smiles = df[smiles_col].values
-        # Use log LD50 values directly and exponentiate for display
         true_vals = df['Response'].values if 'Response' in df.columns else [None] * len(df)
         pred_vals = df['cond_tox_pred'].values if 'cond_tox_pred' in df.columns else [None] * len(df)
-        return embeddings, smiles, true_vals, pred_vals, set(smiles)
+        return embeddings, smiles, true_vals, pred_vals, set(smiles), df.get('bal_tox_level', pd.Series([None]*len(df)))
     except Exception as e:
         print(f"Error loading data: {e}")
-        return None, None, None, None, set()
+        return None, None, None, None, set(), None
+
+def load_chemnet_data(file_path, selected_smiles, max_spectra, smiles_col, seed, smiles_to_true_ld50_map):
+    try:
+        df = pd.read_parquet(file_path)
+        embedding_cols = [col for col in df.columns if col.startswith('Embedding Float ')]
+        embedding_cols.sort(key=lambda x: int(x.split()[-1]))
+        df = df[df[smiles_col].isin(selected_smiles)]
+        df = sample_spectra_per_chemical(df, smiles_col, max_spectra, seed)
+        if not embedding_cols or len(df) == 0:
+            return None, None, None, None
+        embeddings = df[embedding_cols].values
+        smiles = df[smiles_col].values
+        true_vals = [smiles_to_true_ld50_map.get(smile, None) for smile in smiles]
+        pred_vals = [None] * len(df)
+        return embeddings, smiles, true_vals, pred_vals
+    except Exception as e:
+        print(f"Error loading ChemNet data: {e}")
+        return None, None, None, None
 
 def make_pca_plot(
     max_smiles=20,
@@ -75,33 +132,37 @@ def make_pca_plot(
     novel_chemicals_black=False,
     include_novel_chemicals=True,
     include_known_chemicals=True,
+    include_true_chemnet=True,
     include_training=True,
-    random_seed=42
+    random_seed=42,
+    balance_classes=False
 ):
-    # Load sets
-    known_emb, known_smiles, known_true, known_pred, known_smiles_set = None, None, None, None, set()
+    known_emb, known_smiles, known_true, known_pred, known_smiles_set, known_tox_levels = None, None, None, None, set(), None
     if include_known_chemicals:
-        known_emb, known_smiles, known_true, known_pred, known_smiles_set = \
-            load_data(known_file, smiles_col, max_smiles, max_spectra, filter_train=0, seed=random_seed)
-    train_emb, train_smiles, train_true, train_pred, _ = None, None, None, None, set()
+        known_emb, known_smiles, known_true, known_pred, known_smiles_set, known_tox_levels = \
+            load_data(known_file, smiles_col, max_smiles, max_spectra, filter_train=0, seed=random_seed, balance_classes=balance_classes)
+    train_emb, train_smiles, train_true, train_pred, _, train_tox_levels = None, None, None, None, set(), None
     if include_training:
-        train_emb, train_smiles, train_true, train_pred, _ = \
-            load_data(known_file, smiles_col, max_smiles, max_spectra, filter_train=1, required_smiles=known_smiles_set if include_known_chemicals else None, seed=random_seed)
-    novel_emb, novel_smiles, novel_true, novel_pred, _ = None, None, None, None, set()
+        train_emb, train_smiles, train_true, train_pred, _, train_tox_levels = \
+            load_data(known_file, smiles_col, max_smiles, max_spectra, filter_train=1, required_smiles=known_smiles_set if include_known_chemicals else None, seed=random_seed, balance_classes=balance_classes)
+    novel_emb, novel_smiles, novel_true, novel_pred, _, novel_tox_levels = None, None, None, None, set(), None
     if include_novel_chemicals:
-        novel_emb, novel_smiles, novel_true, novel_pred, _ = \
-            load_data(novel_file, smiles_col, max_smiles, max_spectra, seed=random_seed)
-
-    embedding_dim = None
-    for arr in [novel_emb, known_emb, train_emb]:
+        novel_emb, novel_smiles, novel_true, novel_pred, _, novel_tox_levels = \
+            load_data(novel_file, smiles_col, max_smiles, max_spectra, seed=random_seed, balance_classes=balance_classes)
+    smiles_to_true_ld50_map = {}
+    for arr_smiles, arr_true in [(known_smiles, known_true), (train_smiles, train_true), (novel_smiles, novel_true)]:
+        if arr_smiles is not None:
+            for smile, tcls in zip(arr_smiles, arr_true):
+                if tcls is not None:
+                    smiles_to_true_ld50_map[smile] = tcls
+    selected_smiles_all = set()
+    for arr in [known_smiles, train_smiles, novel_smiles]:
         if arr is not None:
-            embedding_dim = arr.shape[1]
-            break
-    for arr_lst in [[known_emb], [train_emb], [novel_emb]]:
-        for idx, arr in enumerate(arr_lst):
-            if arr is not None and embedding_dim is not None:
-                arr_lst[idx] = pad_or_truncate(arr, embedding_dim)
-    # Data stitching
+            selected_smiles_all.update(arr)
+    chemnet_emb, chemnet_smiles, chemnet_true, chemnet_pred = None, None, None, None
+    if include_true_chemnet:
+        chemnet_emb, chemnet_smiles, chemnet_true, chemnet_pred = \
+            load_chemnet_data(chemnet_file, selected_smiles_all, max_spectra, smiles_col, random_seed, smiles_to_true_ld50_map)
     trace_types = []
     if include_training and train_emb is not None:
         trace_types.append(('Training', train_emb, train_smiles, train_true, train_pred))
@@ -109,6 +170,8 @@ def make_pca_plot(
         trace_types.append(('Known Chemicals', known_emb, known_smiles, known_true, known_pred))
     if include_novel_chemicals and novel_emb is not None:
         trace_types.append(('Novel Chemicals', novel_emb, novel_smiles, novel_true, novel_pred))
+    if include_true_chemnet and chemnet_emb is not None:
+        trace_types.append(('True ChemNet', chemnet_emb, chemnet_smiles, chemnet_true, chemnet_pred))
     all_embeddings, all_smiles, all_true_vals, all_pred_vals, all_dataset_types = [], [], [], [], []
     for dtype, emb, smiles, tru, pre in trace_types:
         all_embeddings.extend(emb)
@@ -132,7 +195,7 @@ def make_pca_plot(
     smiles_to_color = {smile: color for smile, color in zip(unique_smiles, turbo_colors)}
     current_novel_smiles_set = set(novel_smiles) if novel_smiles is not None else set()
     traces = []
-    for dtype in ['Training','Known Chemicals','Novel Chemicals']:
+    for dtype in ['Training','Known Chemicals','Novel Chemicals','True ChemNet']:
         mask = dataset_types_array==dtype
         if not mask.any(): continue
         if novel_chemicals_black:
@@ -141,6 +204,8 @@ def make_pca_plot(
                 if not flag: continue
                 smile = smiles_array[idx]
                 if dtype == "Novel Chemicals":
+                    color_arr.append("black")
+                elif dtype == "True ChemNet" and smile in current_novel_smiles_set:
                     color_arr.append("black")
                 else:
                     color_arr.append(smiles_to_color[smile] if color_by_smiles else 'black')
@@ -154,24 +219,28 @@ def make_pca_plot(
             v_true = true_vals_array[idx]
             v_pred = pred_vals_array[idx]
             tp = dtype
-            # Use np.exp for LD50
-            true_ld50 = np.exp(v_true) if v_true is not None else 'N/A'
-            pred_ld50 = np.exp(v_pred) if v_pred is not None else 'N/A'
-            txt = (
-                f"SMILES: {smile}"
-                f"<br>True LD50: {true_ld50:.3f}" if v_true is not None else "<br>True LD50: N/A"
-            )
-            txt += (
-                f"<br>Predicted LD50: {pred_ld50:.3f}" if v_pred is not None else "<br>Predicted LD50: N/A"
-            )
+            try:
+                true_ld50_txt = f"{float(v_true):.3f}" if v_true is not None and not pd.isna(v_true) else "N/A"
+            except Exception:
+                true_ld50_txt = "N/A"
+            if dtype == "True ChemNet":
+                txt = f"SMILES: {smile}<br>True LD50: {true_ld50_txt}<br>Predicted LD50: N/A"
+            else:
+                try:
+                    pred_ld50 = np.exp(v_pred) if v_pred is not None and not pd.isna(v_pred) else None
+                    pred_ld50_txt = f"{float(pred_ld50):.3f}" if pred_ld50 is not None else "N/A"
+                except:
+                    pred_ld50_txt = 'N/A'
+                txt = f"SMILES: {smile}<br>True LD50: {true_ld50_txt}<br>Predicted LD50: {pred_ld50_txt}"
             subset_hover.append(txt)
         marker_map = {
             'Training': 'triangle-up',
             'Known Chemicals': 'square',
             'Novel Chemicals': 'circle',
+            'True ChemNet': 'x'
         }
         marker = marker_map[dtype]
-        alpha = 1.0 if dtype=="Novel Chemicals" else 0.7
+        alpha = 1.0 if dtype=="True ChemNet" else 0.7
         traces.append(
             go.Scatter(
                 x=embeddings_2d[mask,0],
@@ -194,7 +263,7 @@ def make_pca_plot(
     fig = go.Figure(traces)
     fig.update_layout(
         title=dict(
-            text=f'2D PCA of Regression Encoder Embeddings (Bin={bin_val}, Threshold={threshold_val}, Loop={loop_num})',
+            text=f'2D PCA of Regression Encoder Embeddings (bin={bin_size}, thresh={threshold})',
             font=dict(size=18, color='black'), x=0.5, xanchor='center'
         ),
         xaxis=dict(
@@ -222,9 +291,8 @@ def make_pca_plot(
     )
     return fig
 
-# --- Dash UI
-max_smiles_values = [5, 10, 15, 20, 30, 40, 50]
-max_spectra_values = [1, 3, 5, 7, 10, 15, 20]
+max_smiles_values = [5, 10, 25, 50, 100, 200]
+max_spectra_values = [1, 5, 10, 25, 50, 100, 200]
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
@@ -258,23 +326,25 @@ app.layout = dbc.Container([
                         {"label": "Training", "value": "Training"},
                         {"label": "Known Chemicals", "value": "Known Chemicals"},
                         {"label": "Novel Chemicals", "value": "Novel Chemicals"},
+                        {"label": "True ChemNet", "value": "True ChemNet"},
                     ],
-                    value=["Training", "Known Chemicals", "Novel Chemicals"],
+                    value=["Training", "Known Chemicals", "Novel Chemicals", "True ChemNet"],
                     id="dataset-types",
                     inline=True
                 ),
-            ], md=6),
+            ], md=5),
             dbc.Col([
                 dbc.Checklist(
                     options=[
                         {"label": "Color by SMILES", "value": "color_by_smiles"},
                         {"label": "Novel Chemicals Black", "value": "novel_chemicals_black"},
+                        {"label": "Balance Classes", "value": "balance_classes"},
                     ],
                     value=["color_by_smiles"],
                     id="color-mode-boxes",
                     inline=True
                 ),
-            ], md=6),
+            ], md=7),
         ], className="mb-3"),
     ]),
     dcc.Loading(dcc.Graph(id='pca-graph'), type="circle"),
@@ -291,8 +361,10 @@ def update_pca_plot(max_smiles, max_spectra, selected_types, color_modes):
     include_training = "Training" in selected_types
     include_known_chemicals = "Known Chemicals" in selected_types
     include_novel_chemicals = "Novel Chemicals" in selected_types
+    include_true_chemnet = "True ChemNet" in selected_types
     color_by_smiles = "color_by_smiles" in color_modes
     novel_chemicals_black = "novel_chemicals_black" in color_modes
+    balance_classes = "balance_classes" in color_modes
     return make_pca_plot(
         max_smiles=max_smiles,
         max_spectra=max_spectra,
@@ -300,8 +372,10 @@ def update_pca_plot(max_smiles, max_spectra, selected_types, color_modes):
         novel_chemicals_black=novel_chemicals_black,
         include_novel_chemicals=include_novel_chemicals,
         include_known_chemicals=include_known_chemicals,
+        include_true_chemnet=include_true_chemnet,
         include_training=include_training,
-        random_seed=42
+        random_seed=42,
+        balance_classes=balance_classes
     )
 
 if __name__ == '__main__':
