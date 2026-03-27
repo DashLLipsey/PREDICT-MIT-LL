@@ -198,3 +198,4 @@ cython_debug/
 # Ignorance of the large data folders
 MIT_LL_data/
 Figures/
+logs/
