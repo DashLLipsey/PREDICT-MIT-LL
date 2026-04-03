@@ -8,4 +8,5 @@ Terminology Guide:
     - 4: Filtered Morgan Fingerprints
     - e1: Instrument group and ionization mode
     - e2: Collision energy level
+
 Files with scripts to train models that use any of these conditions are labelled with the numbers of each condition used.
