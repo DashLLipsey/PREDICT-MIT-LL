@@ -1,19 +1,31 @@
+# Package Imports
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 import torch
+import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 from torch.nn import CrossEntropyLoss
-import os, sys
-
+import requests
+from fcd_torch import FCD
+import rdkit
+from collections import Counter
+import gc
+import pickle
+import wandb
+# Add the Python_files directory to the Python path
+import sys
+import os
 sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
 import functions_enc as f
 import function_depot as fd
 
-### USER SETTINGS
+# Data set to use
 dataset_name = 'bin1_thresh0_05_df_spectra'  # 'bin1_thresh0_05_df_spectra'
 num_loops = 10
 
-# --- Toxicity filtering config (easy to comment out) ---
+# --- Toxicity filtering config ----
 ENABLE_TOX_FILTERING = False  # Set to True to enable toxicity-based filtering
 # Removal percentage for each toxicity level (0-100, set to 0 to skip)
 tox_removal_percent_level_0 = 0
@@ -34,7 +46,7 @@ super_test_smiles = [
     'CC1(C)O[C@@H]2C[C@H]3[C@@H]4C[C@H](F)C5=CC(=O)C=C[C@]5(C)[C@H]4[C@@H](O)C[C@]3(C)[C@]2(C(=O)CO)O1 CC(=O)OC1(C)CC(C)C(=O)C(C(O)CC2CC(=O)NC(=O)C2)C1',
     'NC(=S)Nc1ccccc1',
     'CC(=O)OC[C@]12C[C@H](OC(=O)CC(C)C)C(C)=C[C@H]1O[C@@H]1[C@H](O)[C@@H](OC(C)=O)[C@@]2(C)[C@]12CO2',
-    # Optional (Level 0 that would get filtered out)
+    # (Level 0 that would get filtered out)
     'CC(C)OC(=O)CCCC=CCC1C(O)CC(O)C1CCC(O)CCc1ccccc1',
     'Cc1cc(C(C)(C)C)c(O)c(C)c1CC1=NCCN1.Cl',
     'CCOP(=O)(OCC)Oc1ccc([N+](=O)[O-])cc1',
@@ -50,7 +62,7 @@ super_test_smiles = [
     'CNC(=O)Oc1cccc2c1OC(C)(C)O2',
     'CC(N)Cc1ccccc1',
     'CC1OC(OC2C(O)CC(OC3C(O)CC(OC4CCC5(C)C(CCC6C5CCC5(C)C(C7=CC(=O)OC7)CCC65O)C4)OC3C)OC2C)CC(O)C1O',
-    # Optional (Level 1 that would get filtered out)
+    # (Level 1 that would get filtered out)
     'CC(=O)C1(O)Cc2c(O)c3c(c(O)c2C(OC2CC(N)C(O)C(C)O2)C1)C(=O)c1ccccc1C3=O',
     'CN1C(C(=O)Nc2ccccn2)=C(O)c2sc(Cl)cc2S1(=O)=O',
     'C=C1CCC(O)CC1=CC=C1CCCC2(C)C1CCC2C(C)C=CC(C)C(C)C',
@@ -128,7 +140,6 @@ lr = 0.0001
 dropout = 0.35
 
 criterion = CrossEntropyLoss()
-
 
 print("=== DIRECT TOXICITY PREDICTION (Repeat Loops) ===")
 print(f"Super test SMILES to remove from training: {len(super_test_smiles)}")
@@ -261,32 +272,28 @@ for loop_counter in range(num_loops):
 
     # ===================================================================
     # TRAIN-TEST SPLIT: SMILES-based 50/50 split (with extras to train)
-    # Splits each SMILES group 50/50 between train and test
-    # ensuring no data leakage between sets
-    # Note: Synthetic data already removed in ablation study
-    # CHANGE: Now balances CE_clean levels within each SMILES group #change
     # ===================================================================
     smiles_groups = filtered_dataset.groupby('SMILES_spectra')
     train_indices, test_indices = [], []
     np.random.seed(loop_counter + 42)
     for smiles, group in smiles_groups:
-        # CHANGE: Group by CE_clean level within this SMILES #change
-        ce_groups = group.groupby('CE_clean', dropna=False) #change
-        smiles_train_idx = [] #change
-        smiles_test_idx = [] #change
+        # CHANGE: Group by CE_clean level within this SMILES 
+        ce_groups = group.groupby('CE_clean', dropna=False) 
+        smiles_train_idx = [] 
+        smiles_test_idx = [] 
         
-        for ce_level, ce_group in ce_groups: #change
-            idx = ce_group.index.values #change
-            n = len(idx) #change
-            np.random.shuffle(idx) #change
+        for ce_level, ce_group in ce_groups: 
+            idx = ce_group.index.values 
+            n = len(idx) 
+            np.random.shuffle(idx) 
             split = n // 2 #change
-            # CHANGE: Distribute this CE_clean level evenly between train/test #change
-            smiles_test_idx.extend(idx[:split]) #change
-            smiles_train_idx.extend(idx[split:]) #change
+            # CHANGE: Distribute this CE_clean level evenly between train/test 
+            smiles_test_idx.extend(idx[:split]) 
+            smiles_train_idx.extend(idx[split:])
         
-        # CHANGE: Add this SMILES' indices to global lists #change
-        test_indices.extend(smiles_test_idx) #change
-        train_indices.extend(smiles_train_idx) #change
+        # CHANGE: Add this SMILES' indices to global lists 
+        test_indices.extend(smiles_test_idx) 
+        train_indices.extend(smiles_train_idx)
     
     train_data = filtered_dataset.loc[train_indices].reset_index(drop=True)
     test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
@@ -388,7 +395,6 @@ for loop_counter in range(num_loops):
     val_out_path = os.path.join(VAL_DIR, val_out_fn)
     full_val_output_df.to_parquet(val_out_path, index=False)
     print(f"✓ Saved validation set predictions: {val_out_fn}")
-
 
     # ==== SUPER TEST ====
     super_test_df = dataset[dataset['SMILES_spectra'].isin(super_test_smiles)].copy()

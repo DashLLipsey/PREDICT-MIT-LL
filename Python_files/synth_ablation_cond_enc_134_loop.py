@@ -1,23 +1,34 @@
+# Package Imports
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 from torch.nn import CrossEntropyLoss
-import os, sys
-
+import requests
+from fcd_torch import FCD
+import rdkit
+from collections import Counter
+import gc
+import pickle
+import wandb
+# Add the Python_files directory to the Python path
+import sys
+import os
 sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
 import functions_enc as f
 import function_depot as fd
 
-#### ==== USER-SETTINGS: CHOOSE DATASET AND REPEATS ==== ####
-# --- Dataset config (set these!) ---
+#### ==== CHOOSE DATASET AND REPEATS ==== ####
+
 bin_size = 1.0  # 1.0 and 0.1     
 threshold = 0.05  # 0.5 and 0.05
-dataset_name = 'bin1_thresh0_05_df_spectra'  # <-- must match parquet file in grid_search_folder
-num_loops = 1      # how many repeated train/val splits & models
+dataset_name = 'bin1_thresh0_05_df_spectra'  
+num_loops = 1      
 
-# --- Toxicity filtering config (easy to comment out) ---
+# --- Toxicity filtering config ---
 ENABLE_TOX_FILTERING = True  # Set to True to enable toxicity-based filtering
 # Removal percentage for each toxicity level (0-100, set to 0 to skip)
 tox_removal_percent_level_0 = 0
@@ -51,7 +62,7 @@ super_test_smiles = [
     'CC1(C)O[C@@H]2C[C@H]3[C@@H]4C[C@H](F)C5=CC(=O)C=C[C@]5(C)[C@H]4[C@@H](O)C[C@]3(C)[C@]2(C(=O)CO)O1 CC(=O)OC1(C)CC(C)C(=O)C(C(O)CC2CC(=O)NC(=O)C2)C1',
     'NC(=S)Nc1ccccc1',
     'CC(=O)OC[C@]12C[C@H](OC(=O)CC(C)C)C(C)=C[C@H]1O[C@@H]1[C@H](O)[C@@H](OC(C)=O)[C@@]2(C)[C@]12CO2',
-    # Optional (Level 0 that would get filtered out)
+    # (Level 0 that would get filtered out)
     'CC(C)OC(=O)CCCC=CCC1C(O)CC(O)C1CCC(O)CCc1ccccc1',
     'Cc1cc(C(C)(C)C)c(O)c(C)c1CC1=NCCN1.Cl',
     'CCOP(=O)(OCC)Oc1ccc([N+](=O)[O-])cc1',
@@ -67,7 +78,7 @@ super_test_smiles = [
     'CNC(=O)Oc1cccc2c1OC(C)(C)O2',
     'CC(N)Cc1ccccc1',
     'CC1OC(OC2C(O)CC(OC3C(O)CC(OC4CCC5(C)C(CCC6C5CCC5(C)C(C7=CC(=O)OC7)CCC65O)C4)OC3C)OC2C)CC(O)C1O',
-    # Optional (Level 1 that would get filtered out)
+    # (Level 1 that would get filtered out)
     'CC(=O)C1(O)Cc2c(O)c3c(c(O)c2C(OC2CC(N)C(O)C(C)O2)C1)C(=O)c1ccccc1C3=O',
     'CN1C(C(=O)Nc2ccccn2)=C(O)c2sc(Cl)cc2S1(=O)=O',
     'C=C1CCC(O)CC1=CC=C1CCCC2(C)C1CCC2C(C)C=CC(C)C(C)C',
@@ -160,7 +171,6 @@ id_to_group = dict(zip(df6_spectra['index_id'], df6_spectra['Group']))
 id_to_ce_clean = dict(zip(df6_spectra['index_id'], df6_spectra['CE_clean']))
 
 # Load synthetic flag from df6_spectra for all index_ids
-# (If 'synthetic' contains NaNs, treat as 0 = not synthetic)
 id_to_synthetic = dict(zip(df6_spectra['index_id'], df6_spectra['synthetic'].fillna(0)))
 
 # Map SMILES_spectra -> index_id in the major dataset (for filtering super test below)
@@ -198,7 +208,7 @@ for loop_counter in range(num_loops):
     filtered_dataset = dataset_no_super_test[dataset_no_super_test['SMILES_spectra'].isin(valid_smiles)].copy()
 
     # ============================================================
-    # === TOXICITY LEVEL FILTERING (EASY TO COMMENT OUT) ===
+    # === TOXICITY LEVEL FILTERING===
     # ============================================================
     if ENABLE_TOX_FILTERING:
         # Collect removal percentages for each level
@@ -284,9 +294,6 @@ for loop_counter in range(num_loops):
 
     # ===================================================================
     # NEW TRAIN-TEST SPLIT: SMILES-based 50/50 split (with CE_clean balancing)
-    # Splits each SMILES group 50/50 between train and test
-    # ensuring no data leakage between sets
-    # Balances CE_clean levels within each SMILES group
     # ===================================================================
     smiles_groups = filtered_dataset.groupby('SMILES_spectra')
     train_indices, test_indices = [], []
@@ -315,8 +322,6 @@ for loop_counter in range(num_loops):
 
     # # ===================================================================
     # # TRAIN-TEST SPLIT: Simple 50/50 split (no CE_clean balancing)
-    # # Splits each SMILES group 50/50 between train and test
-    # # NO synthetic data included (already removed above)
     # # ===================================================================
     # smiles_groups = filtered_dataset.groupby('SMILES_spectra')
     # train_indices, test_indices = [], []
@@ -333,7 +338,6 @@ for loop_counter in range(num_loops):
     # test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
 
     # Keep original index_id, add temp_index only for internal processing if needed
-    # DO NOT overwrite index_id - it tracks specific spectra across the pipeline
     train_data_processed = fd.add_response_and_log_response(train_data.copy(), df6_subset, smiles_col='SMILES_spectra')
     train_data_processed = fd.add_tox_levels(train_data_processed)
     # Add 'index' column for the tensor function, but use index_id values
@@ -509,7 +513,6 @@ for loop_counter in range(num_loops):
     train_intermediate_df = intermediate_df[intermediate_df['train']==1].reset_index(drop=True)
     val_intermediate_df = intermediate_df[intermediate_df['train']==0].reset_index(drop=True)
 
-
     # Ensure all tox_level_0 to tox_level_4 columns are present after filtering
     for col in [f"tox_level_{i}" for i in range(5)]:
         if col not in train_intermediate_df.columns:
@@ -531,7 +534,7 @@ for loop_counter in range(num_loops):
                                                num_classes=tox_num_classes, 
                                                dropout_rate=dropout2).to(device)
 
-    
+    # Alternative architectures 
     # tox_classifier = fd.ToxicityClassifier_134_2(num_classes=tox_num_classes,
     #                                              input_length=4608,
     #                                              dropout_rate=dropout2,

@@ -1,34 +1,27 @@
 ### NO SIGMOIND NO WEIGHTS
-
-
-# Basic Package Imports
+# Package Imports
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-
-# Non-basic package imports
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
+from torch.nn import CrossEntropyLoss
 import requests
-
-# Packages I don't understand
 from fcd_torch import FCD
 import rdkit
 from collections import Counter
 import gc
 import pickle
 import wandb
-
 # Add the Python_files directory to the Python path
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
-
-# Now you can import your modules
 import functions_enc as f
 import function_depot as fd
+
 
 ##### ==================== SUPER TEST SET SMILES ==================== #####
 # New Super Test SMILES list
