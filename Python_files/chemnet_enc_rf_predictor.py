@@ -38,7 +38,7 @@ super_test_smiles = [
     'CC1(C)O[C@@H]2C[C@H]3[C@@H]4C[C@H](F)C5=CC(=O)C=C[C@]5(C)[C@H]4[C@@H](O)C[C@]3(C)[C@]2(C(=O)CO)O1 CC(=O)OC1(C)CC(C)C(=O)C(C(O)CC2CC(=O)NC(=O)C2)C1',
     'NC(=S)Nc1ccccc1',
     'CC(=O)OC[C@]12C[C@H](OC(=O)CC(C)C)C(C)=C[C@H]1O[C@@H]1[C@H](O)[C@@H](OC(C)=O)[C@@]2(C)[C@]12CO2',
-    # Optional (Level 0 that would get filtered out)
+    # (Level 0 that would get filtered out)
     'CC(C)OC(=O)CCCC=CCC1C(O)CC(O)C1CCC(O)CCc1ccccc1',
     'Cc1cc(C(C)(C)C)c(O)c(C)c1CC1=NCCN1.Cl',
     'CCOP(=O)(OCC)Oc1ccc([N+](=O)[O-])cc1',
@@ -54,7 +54,7 @@ super_test_smiles = [
     'CNC(=O)Oc1cccc2c1OC(C)(C)O2',
     'CC(N)Cc1ccccc1',
     'CC1OC(OC2C(O)CC(OC3C(O)CC(OC4CCC5(C)C(CCC6C5CCC5(C)C(C7=CC(=O)OC7)CCC65O)C4)OC3C)OC2C)CC(O)C1O',
-    # Optional (Level 1 that would get filtered out)
+    # (Level 1 that would get filtered out)
     'CC(=O)C1(O)Cc2c(O)c3c(c(O)c2C(OC2CC(N)C(O)C(C)O2)C1)C(=O)c1ccccc1C3=O',
     'CN1C(C(=O)Nc2ccccn2)=C(O)c2sc(Cl)cc2S1(=O)=O',
     'C=C1CCC(O)CC1=CC=C1CCCC2(C)C1CCC2C(C)C=CC(C)C(C)C',

@@ -34,7 +34,7 @@ super_test_smiles = [
     'CC1(C)O[C@@H]2C[C@H]3[C@@H]4C[C@H](F)C5=CC(=O)C=C[C@]5(C)[C@H]4[C@@H](O)C[C@]3(C)[C@]2(C(=O)CO)O1 CC(=O)OC1(C)CC(C)C(=O)C(C(O)CC2CC(=O)NC(=O)C2)C1',
     'NC(=S)Nc1ccccc1',
     'CC(=O)OC[C@]12C[C@H](OC(=O)CC(C)C)C(C)=C[C@H]1O[C@@H]1[C@H](O)[C@@H](OC(C)=O)[C@@]2(C)[C@]12CO2',
-    # Optional (Level 0 that would get filtered out)
+    # (Level 0 that would get filtered out)
     'CC(C)OC(=O)CCCC=CCC1C(O)CC(O)C1CCC(O)CCc1ccccc1',
     'Cc1cc(C(C)(C)C)c(O)c(C)c1CC1=NCCN1.Cl',
     'CCOP(=O)(OCC)Oc1ccc([N+](=O)[O-])cc1',
@@ -50,7 +50,7 @@ super_test_smiles = [
     'CNC(=O)Oc1cccc2c1OC(C)(C)O2',
     'CC(N)Cc1ccccc1',
     'CC1OC(OC2C(O)CC(OC3C(O)CC(OC4CCC5(C)C(CCC6C5CCC5(C)C(C7=CC(=O)OC7)CCC65O)C4)OC3C)OC2C)CC(O)C1O',
-    # Optional (Level 1 that would get filtered out)
+    # (Level 1 that would get filtered out)
     'CC(=O)C1(O)Cc2c(O)c3c(c(O)c2C(OC2CC(N)C(O)C(C)O2)C1)C(=O)c1ccccc1C3=O',
     'CN1C(C(=O)Nc2ccccn2)=C(O)c2sc(Cl)cc2S1(=O)=O',
     'C=C1CCC(O)CC1=CC=C1CCCC2(C)C1CCC2C(C)C=CC(C)C(C)C',
@@ -129,7 +129,7 @@ def parse_dataset_name(dataset_name):
 cond_encoder_results = [] 
 
 # Model parameters
-output_size = None  # Will be set dynamically based on data
+output_size = None  
 num_layers = 5
 batch_size = 256
 epochs = 250
@@ -148,20 +148,18 @@ print(f"Super test SMILES to remove from training: {len(super_test_smiles)}")
 # Set up device and load all reference datasets
 device = fd.set_up_gpu()
 
-# Step 1 embedding inputs
+# Embedding inputs
 name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_chemnet.parquet")
 # Load the original dataset for response mapping
 df6_subset = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_subset.parquet")
 # Load spectra metadata
 df6_spectra = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_spectra.parquet")
 
-
 # Define folders
 grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes_df6"
 
 # Get all dataset files from the grid search folder
 dataset_files = [f for f in os.listdir(grid_search_folder) if f.endswith('.parquet') and 'df_spectra' in f]
-
 
 # Allowed bin sizes and thresholds
 allowed_bin_prefixes = ['bin0_1_', 'bin0_5_', 'bin1_', 'bin10_', 'bin100_', 'bin500_']
@@ -352,11 +350,9 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         
         # ==================== EVALUATE ON FULL VALIDATION SET ==================== #
         print("Evaluating on full validation set...")
-        # Prepare full filtered dataset
         filtered_dataset_full = filtered_dataset.copy()
         
         # Create train indicator mapping based on original index
-        # 1 = training spectra, 0 = validation/test spectra
         train_indicator_map = {}
         for idx in filtered_dataset_full.index:
             train_indicator_map[idx] = 1 if idx in train_indices_set else 0
@@ -375,7 +371,6 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
         filtered_dataset_for_tensors = filtered_dataset_full_processed.drop(columns=['original_index', 'train']).copy()
         
         # Create tensors for full validation set
-        # Use stop_idx=-6 to exclude both Response and log_response columns from input
         x_full_val_with_ext, y_full_val_emb, y_full_val_tox, full_val_indices_tensor = fd.create_dataset_tensors_12e1e2(
             filtered_dataset_for_tensors, name_smiles_embedding_df, device, start_idx=1, stop_idx=-6)
         
@@ -447,7 +442,6 @@ for i, dataset_name in enumerate(sorted(dataset_names), 1):
             super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
             
             # Create tensors for super test set
-            # Use stop_idx=-6 to exclude both Response and log_response columns from input
             x_super_test_with_ext, y_super_test_emb, y_super_test_tox, super_test_indices_tensor = fd.create_dataset_tensors_12e1e2(
                 super_test_processed, name_smiles_embedding_df, device, start_idx=1, stop_idx=-6)
             

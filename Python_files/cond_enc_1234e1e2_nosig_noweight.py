@@ -156,15 +156,15 @@ def parse_dataset_name(dataset_name):
 cond_encoder_results = [] 
 
 # Model parameters
-output_size = None  # Will be set dynamically based on data
+output_size = None  
 num_layers = 6
 batch_size = 256
 epochs = 250
 lr = 0.0001
 lambda1 = 80
 lambda2 = 2
-lambda3 = 100  # For regular Morgan fingerprints
-lambda4 = 100  # For filtered Morgan fingerprints
+lambda3 = 100  
+lambda4 = 100  
 
 # Loss functions
 criterion1 = nn.MSELoss()  # ChemNet embeddings

@@ -11,13 +11,12 @@ import functions_enc as f
 import function_depot as fd
 
 #### ==== USER-SETTINGS: CHOOSE DATASET AND REPEATS ==== ####
-# --- Dataset config (set these!) ---
 bin_size = 1.0  # 1.0 and 0.1     
 threshold = 0.05  # 0.05 and 0.5
-dataset_name = 'bin1_thresh0_05_df_spectra'  # <-- must match parquet file in grid_search_folder
-num_loops = 10      # how many repeated train/val splits & models
+dataset_name = 'bin1_thresh0_05_df_spectra'
+num_loops = 10 
 
-# --- Toxicity filtering config (easy to comment out) ---
+# --- Toxicity filtering config ---
 ENABLE_TOX_FILTERING = False  # Set to True to enable toxicity-based filtering
 # Removal percentage for each toxicity level (0-100, set to 0 to skip)
 tox_removal_percent_level_0 = 0
@@ -39,11 +38,7 @@ name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_
 morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_morganfp.parquet")
 filtered_morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_filtered_morganfp.parquet")
 
-# # Load in internal conditions with noise
-# name_smiles_embedding_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_chemnet_noise.parquet")
-# morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_morganfp_noise.parquet")
-# filtered_morgan_df = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_filtered_morganfp_noise.parquet")
-
+# Data inputs
 df6_subset = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_subset.parquet")
 df6_spectra = pd.read_parquet("/home/dlipsey/MITLincolnLabs/MIT_LL_data/df6_spectra.parquet")
 grid_search_folder = "/home/dlipsey/MITLincolnLabs/MIT_LL_data/grid_search_dataframes_df6"
@@ -56,7 +51,7 @@ super_test_smiles = [
     'CC1(C)O[C@@H]2C[C@H]3[C@@H]4C[C@H](F)C5=CC(=O)C=C[C@]5(C)[C@H]4[C@@H](O)C[C@]3(C)[C@]2(C(=O)CO)O1 CC(=O)OC1(C)CC(C)C(=O)C(C(O)CC2CC(=O)NC(=O)C2)C1',
     'NC(=S)Nc1ccccc1',
     'CC(=O)OC[C@]12C[C@H](OC(=O)CC(C)C)C(C)=C[C@H]1O[C@@H]1[C@H](O)[C@@H](OC(C)=O)[C@@]2(C)[C@]12CO2',
-    # Optional (Level 0 that would get filtered out)
+    # (Level 0 that would get filtered out)
     'CC(C)OC(=O)CCCC=CCC1C(O)CC(O)C1CCC(O)CCc1ccccc1',
     'Cc1cc(C(C)(C)C)c(O)c(C)c1CC1=NCCN1.Cl',
     'CCOP(=O)(OCC)Oc1ccc([N+](=O)[O-])cc1',
@@ -72,7 +67,7 @@ super_test_smiles = [
     'CNC(=O)Oc1cccc2c1OC(C)(C)O2',
     'CC(N)Cc1ccccc1',
     'CC1OC(OC2C(O)CC(OC3C(O)CC(OC4CCC5(C)C(CCC6C5CCC5(C)C(C7=CC(=O)OC7)CCC65O)C4)OC3C)OC2C)CC(O)C1O',
-    # Optional (Level 1 that would get filtered out)
+    # (Level 1 that would get filtered out)
     'CC(=O)C1(O)Cc2c(O)c3c(c(O)c2C(OC2CC(N)C(O)C(C)O2)C1)C(=O)c1ccccc1C3=O',
     'CN1C(C(=O)Nc2ccccn2)=C(O)c2sc(Cl)cc2S1(=O)=O',
     'C=C1CCC(O)CC1=CC=C1CCCC2(C)C1CCC2C(C)C=CC(C)C(C)C',
@@ -165,7 +160,6 @@ id_to_group = dict(zip(df6_spectra['index_id'], df6_spectra['Group']))
 id_to_ce_clean = dict(zip(df6_spectra['index_id'], df6_spectra['CE_clean']))
 
 # Load synthetic flag from df6_spectra for all index_ids
-# (If 'synthetic' contains NaNs, treat as 0 = not synthetic)
 id_to_synthetic = dict(zip(df6_spectra['index_id'], df6_spectra['synthetic'].fillna(0)))
 
 # Map SMILES_spectra -> index_id in the major dataset (for filtering super test below)
@@ -291,10 +285,6 @@ for loop_counter in range(num_loops):
 
     # ===================================================================
     # TRAIN-TEST SPLIT: SMILES-based 50/50 split (with CE_clean balancing)
-    # Splits each SMILES group 50/50 between train and test
-    # ensuring no data leakage between sets
-    # Synthetic data is added to training set only
-    # Balances CE_clean levels within each SMILES group
     # ===================================================================
     smiles_groups = real_data.groupby('SMILES_spectra')
     train_indices, test_indices = [], []
@@ -325,7 +315,6 @@ for loop_counter in range(num_loops):
     test_data = filtered_dataset.loc[test_indices].reset_index(drop=True)
 
     # Keep original index_id, add temp_index only for internal processing if needed
-    # DO NOT overwrite index_id - it tracks specific spectra across the pipeline
     train_data_processed = fd.add_response_and_log_response(train_data.copy(), df6_subset, smiles_col='SMILES_spectra')
     train_data_processed = fd.add_tox_levels(train_data_processed)
     # Ensure all toxicity level columns exist (even if empty due to filtering)
@@ -396,7 +385,7 @@ for loop_counter in range(num_loops):
     )
 
     # ==== STEP 1: GENERATE EMBEDDINGS FOR ALL ====
-    trained_embedding_model.eval() # Enter evaluation mode to generate embeddings
+    trained_embedding_model.eval() 
     with torch.no_grad():
         train_embeddings_combined = trained_embedding_model(x_train_with_ext).cpu()
         val_embeddings_combined = trained_embedding_model(x_val_with_ext).cpu()
@@ -458,7 +447,7 @@ for loop_counter in range(num_loops):
         if 'CE_clean' not in super_test_df.columns:
             super_test_df['CE_clean'] = super_test_df['index_id'].map(id_to_ce_clean).fillna('Unknown')
 
-        # Keep original index_id - DO NOT overwrite
+        # Keep original index_id 
         super_test_processed = fd.add_response_and_log_response(super_test_df.copy(), df6_subset, smiles_col='SMILES_spectra')
         super_test_processed = fd.add_tox_levels(super_test_processed)
         # Ensure all toxicity level columns exist (even if empty due to filtering)
@@ -522,7 +511,7 @@ for loop_counter in range(num_loops):
     tox_classifier = fd.ToxicityClassifier_134(num_layers=tox_num_layers, 
                                                num_classes=tox_num_classes, 
                                                dropout_rate=dropout2).to(device)
-    
+    # Alternative architectures with layer size options:
     # tox_classifier = fd.ToxicityClassifier_134_2(num_classes=tox_num_classes,
     #                                              input_length=4608,
     #                                              dropout_rate=dropout2,
