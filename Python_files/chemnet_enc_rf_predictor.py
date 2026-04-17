@@ -99,7 +99,6 @@ super_test_smiles = [
     'c1ccc(Nc2ccc3ccccc3c2)cc1'
 ]
 
-
 def parse_dataset_name(dataset_name):
     """Extract bin size and threshold from dataset name"""
     if 'thresh_zero' in dataset_name:
@@ -118,13 +117,12 @@ def parse_dataset_name(dataset_name):
     
     return bin_size, threshold
 
-
 print("="*80)
 print("SECTION 1: ENCODER + RANDOM FOREST PREDICTOR")
 print("="*80)
 
 # Model parameters for encoder
-output_size = 512  # ChemNet embeddings
+output_size = 512 
 num_layers = 5
 batch_size = 256
 epochs = 250
@@ -137,7 +135,7 @@ rf_max_depth = None
 rf_random_state = 42
 
 # Loss functions
-criterion = nn.MSELoss()  # ChemNet embeddings
+criterion = nn.MSELoss()  
 
 print("=== ENCODER + RF: ChemNet Encoder + Random Forest Toxicity Predictor ===")
 print(f"Super test SMILES to remove from training: {len(super_test_smiles)}")
