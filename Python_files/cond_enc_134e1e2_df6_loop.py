@@ -20,7 +20,7 @@ sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'Python_files'))
 import functions_enc as f
 import function_depot as fd
 
-#### ==== USER-SETTINGS: CHOOSE DATASET AND REPEATS ==== ####
+#### ==== CHOOSE DATASET AND REPEATS ==== ####
 bin_size = 1.0  # 1.0 and 0.1     
 threshold = 0.05  # 0.05 and 0.5
 dataset_name = 'bin1_thresh0_05_df_spectra'
