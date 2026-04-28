@@ -1,5 +1,7 @@
-# MITLincolnLabs
-MIT Lincoln Labs Chemical Toxicity Detection
+# PREDICT
+PREDICT is an ML-based capability to predict chemical toxicity directly from chemical sensor spectra. 
+Research was done in collaboration with MIT Lincoln Laboratories.
+
 Terminology Guide: 
 - In file names conditions are labeled numberically as follows:
     - 1: ChemNet
