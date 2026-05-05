@@ -12,3 +12,6 @@ Terminology Guide:
     - e2: Collision energy level
 
 Files with scripts to train models that use any of these conditions are labelled with the numbers of each condition used.
+
+DISTRIBUTION STATEMENT A. Approved for public release. Distribution is unlimited.
+This material is based upon work supported by the Department of the Air Force under Air Force Contract No. FA8702-15-D-0001 or FA8702-25-D-B002. Any opinions, findings, conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the Department of the Air Force.
